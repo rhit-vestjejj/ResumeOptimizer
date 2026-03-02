@@ -103,7 +103,43 @@ Local-only resume tailoring web app for Linux servers, designed to be accessed o
 └── requirements.txt
 ```
 
-## Setup (Ubuntu/Debian)
+## Quick start (Docker, one command)
+
+### 1) Prerequisites
+
+- Docker Engine
+- Docker Compose (v2 plugin)
+
+### 2) Configure environment
+
+Create or update `.env` in the project root (same variables as local mode):
+
+```bash
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-4.1-mini
+ENABLE_OCR=0
+# Optional:
+# RESUME_APP_TOKEN=change_me
+```
+
+### 3) Start the app
+
+```bash
+make docker-up
+```
+
+Open: `http://localhost:8030`
+
+Helpful commands:
+
+```bash
+make docker-logs
+make docker-down
+```
+
+First build can take several minutes because the image installs TeX and Playwright Chromium.
+
+## Manual setup (Ubuntu/Debian)
 
 ### 1) System packages
 

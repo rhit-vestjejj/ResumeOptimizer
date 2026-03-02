@@ -1,0 +1,22 @@
+services:
+  resume-optimizer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: resume-optimizer
+    ports:
+      - "8030:8030"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      ENABLE_OCR: ${ENABLE_OCR:-0}
+      RESUME_APP_TOKEN: ${RESUME_APP_TOKEN:-}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8030/ > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

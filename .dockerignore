@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env
+.pytest_cache
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+data/outputs
+data/uploads

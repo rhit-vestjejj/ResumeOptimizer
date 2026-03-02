@@ -162,7 +162,7 @@ Implemented:
 
 ⸻
 
-Step 8: Make It Installable Easily
+Step 8: Make It Installable Easily [COMPLETE - 2026-03-02]
 
 Right now:
 	•	Linux host
@@ -177,6 +177,12 @@ You need either:
 	•	Or hosted version
 
 If your target market is CS students, local Docker might be fine.
+
+Implemented:
+	•	Dockerized runtime via `Dockerfile` (Python app + LaTeX + OCR + Playwright Chromium).
+	•	Added `docker-compose.yml` with persisted `./data` volume and `.env` wiring.
+	•	Added one-command setup flow via `make docker-up`.
+	•	Documented Docker quick-start and operational commands in `README.md`.
 
 But if setup takes 30 minutes, you lose 80% of users.
 
