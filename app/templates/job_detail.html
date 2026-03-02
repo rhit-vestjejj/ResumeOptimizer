@@ -21,7 +21,7 @@
   <h2>Tailor Resume</h2>
   {% if llm_available %}
   <form method="post" action="/jobs/{{ job.job_id }}/tailor">
-    <p class="muted">Opinionated defaults are applied: one-page output, must-have coverage enforcement, and project-focused selection.</p>
+    <p class="muted">Opinionated defaults are applied: one-page output, must-have coverage enforcement, and project-focused selection in a single pass.</p>
     <button type="submit">Generate Tailored Resume</button>
   </form>
   {% else %}
@@ -40,19 +40,5 @@
     {% endfor %}
   </ul>
   {% endif %}
-</section>
-
-<section class="card">
-  <h2>Selection Feedback</h2>
-  <p class="muted">Preferred titles are boosted. Blocked titles are penalized during matching.</p>
-  <form method="post" action="/jobs/{{ job.job_id }}/feedback">
-    <label>Preferred Titles (one per line)</label>
-    <textarea name="preferred_titles" rows="5">{% for title in feedback.preferred_titles %}{{ title }}
-{% endfor %}</textarea>
-    <label>Blocked Titles (one per line)</label>
-    <textarea name="blocked_titles" rows="5">{% for title in feedback.blocked_titles %}{{ title }}
-{% endfor %}</textarea>
-    <button type="submit">Save Feedback</button>
-  </form>
 </section>
 {% endblock %}

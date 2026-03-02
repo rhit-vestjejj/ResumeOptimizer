@@ -946,57 +946,6 @@ def _build_selection_reason(
     return f"Selected as {evidence_type}: {'; '.join(reasons)}."
 
 
-def _parse_feedback_terms(values: Sequence[str]) -> Tuple[Set[str], Set[str]]:
-    normalized_titles: Set[str] = set()
-    tokens: Set[str] = set()
-    for value in values:
-        cleaned = (value or '').strip()
-        normalized = normalize_token(cleaned)
-        if normalized:
-            normalized_titles.add(normalized)
-        tokens.update(_canonicalize_terms(tokenize(cleaned)))
-    tokens = {token for token in tokens if len(token) > 1}
-    return normalized_titles, tokens
-
-
-def _feedback_adjustment(
-    candidate: CandidateItem,
-    preferred_titles: Set[str],
-    blocked_titles: Set[str],
-    preferred_terms: Set[str],
-    blocked_terms: Set[str],
-) -> float:
-    adjustment = 0.0
-    title_id = normalize_token(candidate.title)
-    candidate_tokens = _candidate_token_set(candidate)
-
-    if title_id and title_id in preferred_titles:
-        adjustment += 7.0
-    if title_id and title_id in blocked_titles:
-        adjustment -= 10.0
-
-    preferred_hits = len(candidate_tokens & preferred_terms)
-    blocked_hits = len(candidate_tokens & blocked_terms)
-    adjustment += min(4.0, preferred_hits * 1.2)
-    adjustment -= min(6.0, blocked_hits * 1.4)
-    return adjustment
-
-
-def _optimization_adjustment(candidate: CandidateItem, jd: JDAnalysis, optimization_level: int) -> float:
-    if optimization_level <= 1:
-        return 0.0
-    required_terms = _required_must_have_terms(jd)
-    if not required_terms:
-        return 0.0
-    candidate_terms = _candidate_token_set(candidate)
-    hits = len(candidate_terms & required_terms)
-    if hits <= 0:
-        if len(required_terms) >= MUST_HAVE_MIN_TERMS:
-            return -0.8 * float(optimization_level - 1)
-        return 0.0
-    return min(5.5, hits * (0.45 + (0.2 * float(optimization_level - 1))))
-
-
 def _build_scoring_context(jd: JDAnalysis, candidates: Sequence[CandidateItem]) -> ScoringContext:
     required_tokens, role_tokens, nice_tokens, resp_tokens, all_terms, phrases = _jd_term_sets(jd)
     strict_required_tokens = {term for term in required_tokens if _is_high_signal_term(term)}
@@ -1220,8 +1169,6 @@ def score_candidate_item(
 def score_candidates(
     candidates: Sequence[CandidateSource],
     jd: JDAnalysis,
-    selection_feedback: Optional[Dict[str, List[str]]] = None,
-    optimization_level: int = 1,
     *,
     jd_text: Optional[str] = None,
     scoring_resume: Optional[CanonicalResume] = None,
@@ -1230,9 +1177,6 @@ def score_candidates(
     if not active_jd_text:
         return []
     scoring_seed = _scoring_seed_resume(scoring_resume)
-    feedback_payload = selection_feedback or {}
-    preferred_titles, preferred_terms = _parse_feedback_terms(feedback_payload.get('preferred_titles', []))
-    blocked_titles, blocked_terms = _parse_feedback_terms(feedback_payload.get('blocked_titles', []))
 
     scored: List[Tuple[CandidateSource, float]] = []
     for candidate_source in candidates:
@@ -1242,14 +1186,6 @@ def score_candidates(
             scoring_seed=scoring_seed,
             source_kind=str(candidate_source.origin.get('kind', '')),
         )
-        score += _feedback_adjustment(
-            candidate_source.candidate,
-            preferred_titles=preferred_titles,
-            blocked_titles=blocked_titles,
-            preferred_terms=preferred_terms,
-            blocked_terms=blocked_terms,
-        )
-        score += _optimization_adjustment(candidate_source.candidate, jd, optimization_level=optimization_level)
         scored.append((candidate_source, round(max(0.0, score), 3)))
     return sorted(scored, key=lambda pair: (-pair[1], pair[0].candidate.title.lower()))
 
@@ -1591,16 +1527,12 @@ def tailor_resume(
     mode: TailorMode,
     llm: Optional[LLMService],
     job_title_hint: Optional[str] = None,
-    selection_feedback: Optional[Dict[str, List[str]]] = None,
-    optimization_level: int = 1,
 ) -> TailorResult:
     jd = analyze_jd_text(jd_text, llm=llm)
     candidates = build_candidate_pool(base_resume, vault_items)
     scored = score_candidates(
         candidates,
         jd,
-        selection_feedback=selection_feedback,
-        optimization_level=optimization_level,
         jd_text=jd_text,
         scoring_resume=base_resume,
     )
@@ -1608,7 +1540,7 @@ def tailor_resume(
     known_terms = _collect_known_terms(candidates, jd)
     warnings: List[str] = []
 
-    selected = _select_top_candidates(scored, jd, optimization_level=optimization_level)
+    selected = _select_top_candidates(scored, jd)
     required_terms = _required_must_have_terms(jd)
     selected_reason_by_source_id = {
         candidate_source.candidate.source_id: _build_selection_reason(candidate_source, jd, required_terms)
@@ -1827,7 +1759,6 @@ def _coverage_swap_pass(
     scored: Sequence[Tuple[CandidateSource, float]],
     required_terms: Set[str],
     total_limit: int,
-    optimization_level: int,
 ) -> List[Tuple[CandidateSource, float]]:
     selected_ids = {candidate_source.candidate.source_id for candidate_source, _ in selected}
     current_coverage = _selected_required_coverage(selected, required_terms)
@@ -1866,7 +1797,7 @@ def _coverage_swap_pass(
         elif _is_experience_candidate(candidate_source):
             replace_priority = 3
 
-        if replace_priority >= 3 and optimization_level < 4:
+        if replace_priority >= 3:
             continue
 
         contribution = len(_candidate_token_set(candidate_source.candidate) & required_terms)
@@ -1891,7 +1822,6 @@ def _enforce_must_have_coverage(
     scored: Sequence[Tuple[CandidateSource, float]],
     jd: JDAnalysis,
     total_limit: int,
-    optimization_level: int,
 ) -> List[Tuple[CandidateSource, float]]:
     required_terms = _required_must_have_terms(jd)
     if len(required_terms) < MUST_HAVE_MIN_TERMS:
@@ -1907,7 +1837,6 @@ def _enforce_must_have_coverage(
             scored=scored,
             required_terms=required_terms,
             total_limit=total_limit,
-            optimization_level=optimization_level,
         )
         attempts += 1
         updated_ids = [candidate_source.candidate.source_id for candidate_source, _ in selected]
@@ -1919,7 +1848,6 @@ def _enforce_must_have_coverage(
 def _select_top_candidates(
     scored: Sequence[Tuple[CandidateSource, float]],
     jd: JDAnalysis,
-    optimization_level: int = 1,
 ) -> List[Tuple[CandidateSource, float]]:
     if not scored:
         return []
@@ -1971,7 +1899,6 @@ def _select_top_candidates(
         scored=scored,
         jd=jd,
         total_limit=total_limit,
-        optimization_level=optimization_level,
     )
 
     if not selected:

@@ -25,7 +25,6 @@ def test_audit_routes_exist() -> None:
     expected = {
         '/audit',
         '/audit/run',
-        '/jobs/{job_id}/feedback',
     }
     actual = {route.path for route in app.routes}
     assert expected.issubset(actual)

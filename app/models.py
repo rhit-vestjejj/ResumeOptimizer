@@ -130,12 +130,6 @@ class JobRecord(StrictModel):
     scraped_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
-class JobSelectionFeedback(StrictModel):
-    preferred_titles: List[str] = Field(default_factory=list)
-    blocked_titles: List[str] = Field(default_factory=list)
-    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-
-
 class TailorMode(str, Enum):
     HARD_TRUTH = 'HARD_TRUTH'
     FUCK_IT = 'FUCK_IT'

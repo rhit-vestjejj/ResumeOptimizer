@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from app.config import Settings
-from app.models import CanonicalResume, JobRecord, JobSelectionFeedback, VaultItem
+from app.models import CanonicalResume, JobRecord, VaultItem
 from app.storage import list_yaml_files, load_model, maybe_load_model, save_model, safe_read_text, safe_write_text
 from app.utils import ensure_within
 
@@ -90,16 +90,6 @@ class DataRepository:
         root.mkdir(parents=True, exist_ok=True)
         save_model(root / 'job.yaml', job)
         safe_write_text(root / 'jd.txt', jd_text)
-
-    def get_job_feedback(self, job_id: str) -> Optional[JobSelectionFeedback]:
-        job_id = self._validate_id(job_id)
-        path = ensure_within(self.jobs_dir, self.jobs_dir / job_id / 'feedback.yaml')
-        return maybe_load_model(path, JobSelectionFeedback)
-
-    def save_job_feedback(self, job_id: str, feedback: JobSelectionFeedback) -> None:
-        job_id = self._validate_id(job_id)
-        path = ensure_within(self.jobs_dir, self.jobs_dir / job_id / 'feedback.yaml')
-        save_model(path, feedback)
 
     def get_job_text(self, job_id: str) -> str:
         job_id = self._validate_id(job_id)

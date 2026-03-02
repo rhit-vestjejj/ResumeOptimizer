@@ -188,7 +188,7 @@ But if setup takes 30 minutes, you lose 80% of users.
 
 ⸻
 
-Step 9: Remove Anything That Isn’t Revenue-Critical
+Step 9: Remove Anything That Isn’t Revenue-Critical [COMPLETE - 2026-03-02]
 
 You don’t need:
 	•	Perfect semantic matching
@@ -203,6 +203,13 @@ You need:
 	•	Setup is easy
 
 Everything else is optional.
+
+Implemented:
+	•	Replaced multi-pass optimization loop in active tailoring workflow with a single-pass run.
+	•	Removed per-job preferred/blocked feedback controls from user-facing job workflow.
+	•	Deleted dormant feedback/optimization backend plumbing (model, repository persistence, and scorer adjustments).
+	•	Simplified result UI by removing optimization target/pass reporting from MVP output.
+	•	Updated tests and docs to reflect the trimmed MVP surface area.
 
 ⸻
 

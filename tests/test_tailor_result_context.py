@@ -16,9 +16,6 @@ def test_tailor_result_context_formats_missing_evidence_terms_for_display() -> N
         'ats_txt_exists': True,
         'compile_error': None,
         'match_score': 84.2,
-        'target_score': 82.0,
-        'passes_used': 2,
-        'max_passes': 5,
         'chosen_items': [],
         'vault_relevance': [
             {

@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
 from app.config import Settings, get_settings
-from app.models import CanonicalResume, JobRecord, JobSelectionFeedback, TailorMode, VaultItem
+from app.models import CanonicalResume, JobRecord, TailorMode, VaultItem
 from app.public_api import (
     apply_patches as public_apply_patches,
     build_canonical as public_build_canonical,
@@ -66,8 +66,6 @@ app = FastAPI(title='Local Resume Tailor', version='1.0.0')
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
 templates = Jinja2Templates(directory='app/templates')
 DEFAULT_TAILOR_MODE = TailorMode.HARD_TRUTH
-DEFAULT_TARGET_MATCH_SCORE = 82.0
-DEFAULT_MAX_OPTIMIZATION_PASSES = 5
 TERM_DISPLAY_OVERRIDES: Dict[str, str] = {
     'ml': 'Machine Learning',
     'ai': 'AI',
@@ -206,10 +204,7 @@ async def generate_tailored_resume(
         job_id=job_id,
         jd_text=pasted_jd_text,
         mode=DEFAULT_TAILOR_MODE,
-        target_score=DEFAULT_TARGET_MATCH_SCORE,
-        max_passes=DEFAULT_MAX_OPTIMIZATION_PASSES,
         job_title_hint=job.title,
-        feedback_payload=_empty_feedback_payload(),
     )
 
     extraction_warnings = [str(w).strip() for w in upload_result.get('extraction_warnings', []) if str(w).strip()]
@@ -837,8 +832,6 @@ async def jobs_detail(request: Request, job_id: str) -> HTMLResponse:
     if not job:
         raise HTTPException(status_code=404, detail='Job not found')
     jd_text = repository.get_job_text(job_id)
-    feedback = repository.get_job_feedback(job_id)
-    feedback_payload = feedback.model_dump(mode='json') if feedback else {'preferred_titles': [], 'blocked_titles': []}
 
     output_root = settings.data_dir / 'outputs' / job_id
     output_runs = sorted([p for p in output_root.glob('*') if p.is_dir()], reverse=True) if output_root.exists() else []
@@ -858,7 +851,6 @@ async def jobs_detail(request: Request, job_id: str) -> HTMLResponse:
             'error': None,
             'latest_output': latest_output,
             'latest_report': latest_report,
-            'feedback': feedback_payload,
         },
     )
 
@@ -871,88 +863,27 @@ async def jobs_update_jd(job_id: str, jd_text: str = Form(...)):
     return RedirectResponse(url=f'/jobs/{job_id}', status_code=303)
 
 
-@app.post('/jobs/{job_id}/feedback')
-async def jobs_update_feedback(
-    job_id: str,
-    preferred_titles: str = Form(default=''),
-    blocked_titles: str = Form(default=''),
-):
-    if not repository.get_job(job_id):
-        raise HTTPException(status_code=404, detail='Job not found')
-
-    preferred = _parse_feedback_titles(preferred_titles)
-    blocked = _parse_feedback_titles(blocked_titles)
-    blocked_ids = {normalize_token(value) for value in blocked if normalize_token(value)}
-    preferred = [value for value in preferred if normalize_token(value) not in blocked_ids]
-
-    feedback = JobSelectionFeedback(preferred_titles=preferred, blocked_titles=blocked)
-    repository.save_job_feedback(job_id, feedback)
-    return RedirectResponse(url=f'/jobs/{job_id}', status_code=303)
-
-
-def _empty_feedback_payload() -> Dict[str, list[str]]:
-    return {'preferred_titles': [], 'blocked_titles': []}
-
-
 def _run_tailoring_workflow(
     *,
     base_resume: CanonicalResume,
     job_id: str,
     jd_text: str,
     mode: TailorMode,
-    target_score: float,
-    max_passes: int,
     job_title_hint: Optional[str],
-    feedback_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
     assert llm_service and llm_service.available
     vault_items = repository.list_vault_items()
 
-    clamped_target_score = max(0.0, min(100.0, float(target_score)))
-    clamped_max_passes = max(1, min(5, int(max_passes)))
-
-    best_tailored = None
-    best_score = -1.0
-    best_pass = 1
-    passes_executed = 0
-
-    for optimization_pass in range(1, clamped_max_passes + 1):
-        pass_tailored = tailor_resume(
-            base_resume=base_resume,
-            vault_items=vault_items,
-            jd_text=jd_text,
-            mode=mode,
-            llm=llm_service,
-            job_title_hint=job_title_hint,
-            selection_feedback=feedback_payload,
-            optimization_level=optimization_pass,
-        )
-        pass_match = compute_match_score(pass_tailored.tailored_resume, jd_text)
-        pass_score = float(pass_match.get('overall_score', 0.0) or 0.0)
-        pass_tailored.report.warnings.append(
-            f'Optimization pass {optimization_pass}/{clamped_max_passes} match score: {pass_score:.2f}.'
-        )
-        passes_executed = optimization_pass
-
-        if pass_score > best_score:
-            best_tailored = pass_tailored
-            best_score = pass_score
-            best_pass = optimization_pass
-
-        if pass_score >= clamped_target_score:
-            break
-
-    assert best_tailored is not None
-    tailored = best_tailored
-    optimization_reached_target = best_score >= clamped_target_score
-    if not optimization_reached_target:
-        tailored.report.warnings.append(
-            f'Target match score {clamped_target_score:.2f} not reached after {passes_executed} passes. Best score: {best_score:.2f}.'
-        )
-    if best_pass < passes_executed:
-        tailored.report.warnings.append(
-            f'Using best resume from pass {best_pass}/{passes_executed} with score {best_score:.2f}.'
-        )
+    tailored = tailor_resume(
+        base_resume=base_resume,
+        vault_items=vault_items,
+        jd_text=jd_text,
+        mode=mode,
+        llm=llm_service,
+        job_title_hint=job_title_hint,
+    )
+    match_payload = compute_match_score(tailored.tailored_resume, jd_text)
+    match_score = float(match_payload.get('overall_score', 0.0) or 0.0)
 
     output_dir = repository.create_output_dir(job_id)
     compile_error: Optional[str] = None
@@ -961,7 +892,7 @@ def _run_tailoring_workflow(
     ats_docx_exists = False
     ats_txt_exists = False
     resume_to_render = tailored.tailored_resume
-    optimization_match_score = best_score
+    optimization_match_score = match_score
     score_lookup = {
         normalize_token(item.title): item.score
         for item in tailored.report.chosen_items
@@ -1083,9 +1014,6 @@ def _run_tailoring_workflow(
         'ats_txt_exists': ats_txt_exists,
         'compile_error': compile_error,
         'match_score': optimization_match_score,
-        'target_score': clamped_target_score,
-        'passes_used': passes_executed,
-        'max_passes': clamped_max_passes,
     }
 
 
@@ -1168,9 +1096,6 @@ def _tailor_result_context(
         'ats_txt_exists': workflow['ats_txt_exists'],
         'compile_error': workflow['compile_error'],
         'match_score': workflow['match_score'],
-        'target_score': workflow['target_score'],
-        'passes_used': workflow['passes_used'],
-        'max_passes': workflow['max_passes'],
         'chosen_items': workflow['chosen_items'],
         'vault_relevance': vault_relevance,
         'missing_required_evidence': workflow['missing_required_evidence'],
@@ -1190,9 +1115,6 @@ async def jobs_tailor(
     if not job:
         raise HTTPException(status_code=404, detail='Job not found')
 
-    feedback = repository.get_job_feedback(job_id)
-    feedback_payload = feedback.model_dump(mode='json') if feedback else _empty_feedback_payload()
-
     base_resume = repository.load_base_resume()
     if not base_resume:
         return render(
@@ -1204,7 +1126,6 @@ async def jobs_tailor(
                 'error': 'Base resume is missing. Upload and save canonical resume first.',
                 'latest_output': None,
                 'latest_report': None,
-                'feedback': feedback_payload,
             },
         )
 
@@ -1218,7 +1139,6 @@ async def jobs_tailor(
                 'error': 'OPENAI_API_KEY is not configured. Tailoring is disabled until set.',
                 'latest_output': None,
                 'latest_report': None,
-                'feedback': feedback_payload,
             },
         )
 
@@ -1228,10 +1148,7 @@ async def jobs_tailor(
         job_id=job_id,
         jd_text=jd_text,
         mode=DEFAULT_TAILOR_MODE,
-        target_score=DEFAULT_TARGET_MATCH_SCORE,
-        max_passes=DEFAULT_MAX_OPTIMIZATION_PASSES,
         job_title_hint=job.title,
-        feedback_payload=feedback_payload,
     )
 
     return render(
@@ -1860,20 +1777,6 @@ def _clean_payload_text(value: Any) -> str:
     if value is None:
         return ''
     return str(value).strip()
-
-
-def _parse_feedback_titles(value: str) -> list[str]:
-    raw = (value or '').replace(',', '\n').replace(';', '\n')
-    seen: set[str] = set()
-    output: list[str] = []
-    for line in raw.splitlines():
-        cleaned = line.strip()
-        token = normalize_token(cleaned)
-        if not token or token in seen:
-            continue
-        seen.add(token)
-        output.append(cleaned)
-    return output
 
 
 def datetime_now_stamp() -> str:

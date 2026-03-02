@@ -2,8 +2,8 @@
 {% block content %}
 <section class="card">
   <h2>Tailoring Complete</h2>
-  <p>Job: <code>{{ job_id }}</code> | Mode: <code>{{ mode.value }}</code> | Output run: <code>{{ timestamp }}</code></p>
-  <p>Match score: <code>{{ match_score }}</code> | Target: <code>{{ target_score }}</code> | Passes: <code>{{ passes_used }}/{{ max_passes }}</code></p>
+  <p>Job: <code>{{ job_id }}</code> | Output run: <code>{{ timestamp }}</code></p>
+  <p>Match score: <code>{{ match_score }}</code></p>
   {% if pdf_exists %}
   <p><a href="/outputs/{{ job_id }}/{{ timestamp }}/resume.pdf">Download LaTeX PDF</a></p>
   {% endif %}

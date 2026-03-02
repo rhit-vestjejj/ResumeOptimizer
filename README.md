@@ -12,9 +12,9 @@ Local-only resume tailoring web app for Linux servers, designed to be accessed o
 - Tailor a one-page ATS-friendly resume in two modes:
   - `HARD_TRUTH`: conservative, never invents, rejects unsupported claims.
   - `FUCK_IT`: aggressive phrasing/reordering but still no new facts.
+- MVP flow uses a single tailoring pass with fixed opinionated defaults; no user tuning knobs in the main UI.
+- Legacy per-job feedback and multi-pass optimization code paths have been removed from active backend flow.
 - Auto-generate a concise summary line that includes the target role title (when detected) plus evidence terms from selected resume content.
-- Per-job ranking feedback controls: boost preferred project/experience titles and downrank blocked titles.
-- Optional iterative optimization loop during tailoring: keep optimizing until a target match score is reached (max 5 passes).
 - Render LaTeX via Jinja2 and compile using `latexmk` to `resume.pdf`.
 - Enforce one-page output with compile-time control loop: trim when over one page, then add projects back while it still fits.
 - Project selection enforces at least 2 bullets per selected project; if space is tight, fewer projects are kept.
@@ -213,7 +213,6 @@ Server listens on:
 - `POST /jobs/ingest` ingest job URL or pasted JD text
 - `GET /jobs/{job_id}` edit JD + tailor controls
 - `POST /jobs/{job_id}/jd` save JD edits
-- `POST /jobs/{job_id}/feedback` save per-job preferred/blocked title feedback
 - `POST /jobs/{job_id}/tailor` run tailoring
 - `GET /outputs/{job_id}/{timestamp}/resume.pdf` download output PDF
 - `GET /outputs/{job_id}/{timestamp}/{artifact}` download generated artifacts (`ats_resume.pdf`, `ats_resume.docx`, `ats_resume.txt`, `bundle.zip`, etc.)

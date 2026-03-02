@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.models import CandidateItem, DateRange, JDAnalysis
-from app.services.tailoring import CandidateSource, score_candidate_item, score_candidates
+from app.services.tailoring import score_candidate_item
 
 
 def test_score_penalizes_off_topic_items_with_same_generic_overlap() -> None:
@@ -70,54 +70,3 @@ def test_score_prefers_ml_systems_over_agentic_apps_for_ml_engineer_jd() -> None
     )
 
     assert score_candidate_item(fraud_ml, jd) > score_candidate_item(agentic_app, jd)
-
-
-def test_feedback_boosts_preferred_and_penalizes_blocked_titles() -> None:
-    jd = JDAnalysis(
-        target_role_keywords=['machine learning engineer'],
-        required_skills=['python', 'sql', 'xgboost', 'fraud'],
-        nice_to_haves=[],
-        responsibilities=['build models'],
-    )
-
-    preferred_candidate = CandidateSource(
-        candidate=CandidateItem(
-            source_type='project',
-            source_id='preferred',
-            title='Fraud Detection Platform',
-            dates=DateRange(start='2025', end='Present'),
-            tags=['fraud', 'ml'],
-            tech=['python', 'sql', 'xgboost'],
-            bullets=['Built fraud models and inference pipelines.'],
-        ),
-        origin={'kind': 'vault', 'item_id': 'preferred'},
-    )
-    blocked_candidate = CandidateSource(
-        candidate=CandidateItem(
-            source_type='project',
-            source_id='blocked',
-            title='AI Scheduling Assistant',
-            dates=DateRange(start='2025', end='Present'),
-            tags=['assistant', 'agentic'],
-            tech=['python', 'llm'],
-            bullets=['Built a scheduling assistant workflow.'],
-        ),
-        origin={'kind': 'vault', 'item_id': 'blocked'},
-    )
-
-    baseline = score_candidates([preferred_candidate, blocked_candidate], jd)
-    adjusted = score_candidates(
-        [preferred_candidate, blocked_candidate],
-        jd,
-        selection_feedback={
-            'preferred_titles': ['Fraud Detection Platform'],
-            'blocked_titles': ['AI Scheduling Assistant'],
-        },
-    )
-
-    baseline_order = [candidate_source.candidate.source_id for candidate_source, _ in baseline]
-    adjusted_order = [candidate_source.candidate.source_id for candidate_source, _ in adjusted]
-    assert baseline_order[0] == 'preferred'
-    assert adjusted_order[0] == 'preferred'
-    assert adjusted[0][1] > baseline[0][1]
-    assert adjusted[1][1] < baseline[1][1]
