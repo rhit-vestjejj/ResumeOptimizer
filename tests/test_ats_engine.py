@@ -11,6 +11,7 @@ from app.services.ats_engine import (
     compute_match_score,
     detect_overlaps,
     detect_sensitive_data,
+    export_bundle,
     extract_skills,
     generate_patches,
     lint_resume,
@@ -122,6 +123,19 @@ def test_render_outputs_supports_filename_prefix(tmp_path: Path) -> None:
     assert Path(result['pdf_path']).name == 'ats_resume.pdf'
 
 
+def test_export_bundle_excludes_bundle_file_itself(tmp_path: Path) -> None:
+    (tmp_path / 'resume.txt').write_text('resume', encoding='utf-8')
+    bundle = export_bundle(tmp_path, tmp_path / 'bundle.zip')
+    assert bundle.exists()
+
+    import zipfile
+
+    with zipfile.ZipFile(bundle, 'r') as archive:
+        names = set(archive.namelist())
+    assert 'resume.txt' in names
+    assert 'bundle.zip' not in names
+
+
 def test_contact_timeline_and_overlap_detection() -> None:
     resume = _sample_resume()
     resume.experience.append(
@@ -163,6 +177,22 @@ def test_skill_jd_graph_and_match_score_are_explainable() -> None:
     assert 'subscores' in score
     assert 'top_drivers' in score
     assert 'ranked_gaps' in score
+
+
+def test_custom_alias_graph_keeps_canonical_ids_normalized() -> None:
+    resume = _sample_resume()
+    resume.skills.categories['Custom'] = ['Machine Learning']
+    jd_text = 'Required: Machine Learning.'
+    alias_graph = {'Machine Learning': ['machine learning']}
+
+    parsed = parse_job_description(jd_text, alias_graph=alias_graph)
+    required = {row['canonical_id'] for row in parsed['required']['skills']}
+    assert 'machine_learning' in required
+
+    score = compute_match_score(resume, jd_text, alias_graph=alias_graph)
+    metadata = score['metadata']
+    assert 'machine_learning' in metadata['resume_hard_skill_ids']
+    assert 'machine_learning' in metadata['matched_required_hard_skills']
 
 
 def test_match_score_applies_must_have_gate_when_required_hard_coverage_is_low() -> None:

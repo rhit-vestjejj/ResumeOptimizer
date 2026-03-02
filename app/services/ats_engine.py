@@ -150,6 +150,40 @@ def _normalize_canonical_id(value: Any) -> str:
     return cleaned
 
 
+def _canonical_alias_graph(
+    base_graph: Dict[str, List[str]],
+    additional_aliases: Optional[Dict[str, List[str]]] = None,
+) -> Dict[str, List[str]]:
+    merged: Dict[str, Set[str]] = {}
+
+    def add_entry(raw_canonical: Any, aliases: Sequence[Any]) -> None:
+        canonical_id = _normalize_canonical_id(raw_canonical)
+        if not canonical_id:
+            return
+        bucket = merged.setdefault(canonical_id, set())
+
+        raw_cleaned = _clean_text(str(raw_canonical)).lower()
+        if raw_cleaned:
+            bucket.add(raw_cleaned)
+
+        # Preserve canonical-token and phrase forms for robust matching.
+        bucket.add(canonical_id)
+        bucket.add(canonical_id.replace('_', ' '))
+
+        for alias in aliases or []:
+            alias_cleaned = _clean_text(str(alias)).lower()
+            if alias_cleaned:
+                bucket.add(alias_cleaned)
+
+    for canonical, aliases in base_graph.items():
+        add_entry(canonical, aliases)
+    if additional_aliases:
+        for canonical, aliases in additional_aliases.items():
+            add_entry(canonical, aliases)
+
+    return {canonical_id: sorted(values) for canonical_id, values in sorted(merged.items())}
+
+
 def _extract_alias_matches(text: str, alias_map: Dict[str, List[str]]) -> List[Dict[str, Any]]:
     lowered = text.lower()
     matches: List[Dict[str, Any]] = []
@@ -169,29 +203,11 @@ def _extract_alias_matches(text: str, alias_map: Dict[str, List[str]]) -> List[D
 
 
 def _canonical_skill_graph(alias_graph: Optional[Dict[str, List[str]]] = None) -> Dict[str, List[str]]:
-    merged: Dict[str, List[str]] = {key: list(values) for key, values in DEFAULT_SKILL_ALIAS_GRAPH.items()}
-    if alias_graph:
-        for canonical, aliases in alias_graph.items():
-            current = merged.setdefault(canonical, [])
-            current.extend(aliases)
-            merged[canonical] = sorted(set(_clean_text(alias).lower() for alias in current if _clean_text(alias)))
-    for canonical, aliases in list(merged.items()):
-        baseline = sorted(set([canonical] + [_clean_text(alias).lower() for alias in aliases if _clean_text(alias)]))
-        merged[canonical] = baseline
-    return merged
+    return _canonical_alias_graph(DEFAULT_SKILL_ALIAS_GRAPH, alias_graph)
 
 
 def _canonical_soft_skill_graph(alias_graph: Optional[Dict[str, List[str]]] = None) -> Dict[str, List[str]]:
-    merged: Dict[str, List[str]] = {key: list(values) for key, values in SOFT_SKILL_ALIAS_GRAPH.items()}
-    if alias_graph:
-        for canonical, aliases in alias_graph.items():
-            current = merged.setdefault(canonical, [])
-            current.extend(aliases)
-            merged[canonical] = sorted(set(_clean_text(alias).lower() for alias in current if _clean_text(alias)))
-    for canonical, aliases in list(merged.items()):
-        baseline = sorted(set([canonical] + [_clean_text(alias).lower() for alias in aliases if _clean_text(alias)]))
-        merged[canonical] = baseline
-    return merged
+    return _canonical_alias_graph(SOFT_SKILL_ALIAS_GRAPH, alias_graph)
 
 
 def _identity_from_text(lines: Sequence[str], text: str) -> Identity:
@@ -1976,9 +1992,13 @@ def export_bundle(output_dir: Path, bundle_path: Optional[Path] = None) -> Path:
     if not output_dir.exists():
         raise FileNotFoundError(f'Output directory not found: {output_dir}')
     target = bundle_path or (output_dir / 'bundle.zip')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target_resolved = target.resolve()
     with zipfile.ZipFile(target, mode='w', compression=zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(output_dir.rglob('*')):
             if path.is_dir():
+                continue
+            if path.resolve() == target_resolved:
                 continue
             archive.write(path, arcname=path.relative_to(output_dir))
     return target

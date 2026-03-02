@@ -26,13 +26,19 @@ to:
 
 ⸻
 
-Step 1: Make It Trustworthy (Non-Negotiable)
+Step 1: Make It Trustworthy (Non-Negotiable) [COMPLETE - 2026-03-02]
 
 Before adding anything:
 	1.	Fix ATS export bug.
 	2.	Fix skill canonical ID corruption.
 	3.	Remove secret.
 	4.	Make pytest run clean.
+
+Implemented:
+	•	Fixed ATS bundle export to prevent `bundle.zip` from being added into itself.
+	•	Fixed canonical skill ID normalization across alias-graph paths to prevent ID mismatch/corruption.
+	•	Verified no live credentials are committed in tracked files and reinforced `.env` placeholder-only guidance.
+	•	Validated clean test run in project env (`./.venv/bin/pytest -q`: 45 passed).
 
 Why?
 

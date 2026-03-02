@@ -122,6 +122,8 @@ ENABLE_OCR=0
 # RESUME_APP_TOKEN=change_me
 ```
 
+Keep `.env` placeholder-only in shared code and never commit real API keys/tokens.
+
 ### 3) Start the app
 
 ```bash
