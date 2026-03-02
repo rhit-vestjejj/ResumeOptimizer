@@ -10,15 +10,19 @@ from app.models import (
     CanonicalResume,
     CandidateItem,
     DateRange,
+    EducationEntry,
     ExperienceEntry,
+    Identity,
     JDAnalysis,
     ProjectEntry,
     SelectedItem,
+    Skills,
     TailorMode,
     TailorReport,
     VaultItem,
     VaultItemType,
 )
+from app.services.ats_engine import compute_match_score
 from app.services.llm import LLMService
 from app.utils import normalize_token, tokenize, unique_preserve_order
 
@@ -932,76 +936,151 @@ def _weighted_phrase_score(
     return total
 
 
-def score_candidate_item(candidate: CandidateItem, jd: JDAnalysis, context: Optional[ScoringContext] = None) -> float:
-    active_context = context or _build_scoring_context(jd, [candidate])
-    required_tokens = active_context.required_tokens
-    role_tokens = active_context.role_tokens
-    nice_tokens = active_context.nice_tokens
-    resp_tokens = active_context.resp_tokens
-    all_terms = active_context.all_terms
-    token_weights = active_context.token_weights
+def _jd_analysis_to_text(jd: JDAnalysis) -> str:
+    sections: List[str] = []
+    if jd.target_role_keywords:
+        sections.append(f"Target role keywords: {', '.join(jd.target_role_keywords)}")
+    if jd.required_skills:
+        sections.append(f"Required skills: {', '.join(jd.required_skills)}")
+    if jd.nice_to_haves:
+        sections.append(f"Preferred skills: {', '.join(jd.nice_to_haves)}")
+    if jd.responsibilities:
+        sections.append(f"Responsibilities: {', '.join(jd.responsibilities)}")
+    return '\n'.join(sections)
 
-    candidate_tokens = _candidate_token_set(candidate)
-    tech_tokens = set(_canonicalize_terms(tokenize(' '.join(candidate.tech))))
-    title_tag_tokens = set(_canonicalize_terms(tokenize(' '.join(candidate.tags + [candidate.title]))))
 
-    required_overlap = _weighted_overlap(candidate_tokens, required_tokens, token_weights)
-    tech_overlap = _weighted_overlap(tech_tokens, required_tokens | resp_tokens, token_weights)
-    role_overlap = _weighted_overlap(title_tag_tokens, role_tokens | required_tokens, token_weights)
-    resp_overlap = _weighted_overlap(candidate_tokens, resp_tokens, token_weights)
-    nice_overlap = _weighted_overlap(candidate_tokens, nice_tokens, token_weights)
-    phrase_score = _weighted_phrase_score(candidate_tokens, active_context.phrases, token_weights)
+def _scoring_seed_resume(scoring_resume: Optional[CanonicalResume]) -> CanonicalResume:
+    if scoring_resume is None:
+        return CanonicalResume(
+            identity=Identity(name='Candidate', email='', phone='', location='', links=[]),
+            summary=None,
+            education=[],
+            experience=[],
+            projects=[],
+            skills=Skills(categories={}),
+            certifications=[],
+            awards=[],
+        )
 
-    coverage_ratio = len(candidate_tokens & all_terms) / max(1, len(all_terms))
-    strict_required = active_context.strict_required_tokens
-    strict_hits = len(candidate_tokens & strict_required)
-    strict_coverage = strict_hits / max(1, len(strict_required)) if strict_required else 1.0
+    seed = CanonicalResume.model_validate(deepcopy(scoring_resume.model_dump()))
+    seed.summary = None
+    seed.experience = []
+    seed.projects = []
+    seed.skills = Skills(categories={})
+    seed.certifications = []
+    seed.awards = []
+    return seed
 
-    focus_terms = _candidate_focus_terms(candidate)
-    unmatched_focus = {
-        term for term in focus_terms
-        if term not in all_terms and term not in LOW_SIGNAL_TERMS
-    }
-    off_topic_penalty = min(4.5, (len(unmatched_focus) / max(1, len(focus_terms))) * 5.0)
 
-    strict_penalty = 0.0
-    if len(strict_required) >= 3 and strict_coverage < 0.34:
-        strict_penalty += (0.34 - strict_coverage) * 9.0
-    if len(strict_required) >= 5 and strict_hits == 0:
-        strict_penalty += 2.5
+def _candidate_section(candidate: CandidateItem, source_kind: Optional[str]) -> str:
+    normalized_source_type = (candidate.source_type or '').strip().lower()
+    normalized_source_kind = (source_kind or '').strip().lower()
 
-    candidate_profile_hits = _profile_hit_counts(candidate_tokens)
-    jd_profile_hits = active_context.jd_profile_hits
-    profile_alignment = 0.0
-    for profile, jd_hits in jd_profile_hits.items():
-        if jd_hits <= 0:
-            continue
-        candidate_hits = candidate_profile_hits.get(profile, 0)
-        if candidate_hits <= 0:
-            continue
-        profile_alignment += min(float(candidate_hits), float(jd_hits) + 1.0)
+    if normalized_source_kind == 'base_experience':
+        return 'experience'
+    if normalized_source_kind == 'base_education':
+        return 'coursework'
+    if normalized_source_type in {'experience', 'job', 'vault:job'}:
+        return 'experience'
+    if normalized_source_type in {'coursework', 'vault:coursework'}:
+        return 'coursework'
+    return 'project'
 
-    if jd_profile_hits.get('ml_core', 0) >= 2 and jd_profile_hits.get('agentic', 0) == 0:
-        agentic_hits = candidate_profile_hits.get('agentic', 0)
-        if agentic_hits > 0:
-            strict_penalty += min(3.0, agentic_hits * 0.9)
 
-    score = (
-        (required_overlap * 1.5)
-        + (tech_overlap * 1.8)
-        + (role_overlap * 0.9)
-        + (resp_overlap * 1.2)
-        + (nice_overlap * 0.4)
-        + (phrase_score * 0.9)
-        + (coverage_ratio * 3.0)
-        + (strict_hits * 1.1)
-        + (strict_coverage * 2.5)
-        + (profile_alignment * 0.9)
-        + _recency_bonus(candidate.dates)
-        - off_topic_penalty
-        - strict_penalty
+def _add_coursework_evidence(resume: CanonicalResume, candidate: CandidateItem) -> None:
+    coursework = unique_preserve_order([term.strip() for term in candidate.tech if term.strip()])
+    if not coursework:
+        coursework = unique_preserve_order(
+            _canonicalize_terms(tokenize(' '.join([candidate.title, *candidate.bullets])))
+        )
+
+    if resume.education:
+        primary_entry = resume.education[0]
+        primary_entry.coursework = unique_preserve_order(primary_entry.coursework + coursework)[:12]
+        return
+
+    resume.education.append(
+        EducationEntry(
+            school=candidate.title or 'Coursework',
+            degree='',
+            major='',
+            minors=[],
+            gpa='',
+            dates=candidate.dates or DateRange(),
+            coursework=coursework[:12],
+        )
     )
 
+
+def _candidate_resume_for_ats(
+    candidate: CandidateItem,
+    scoring_seed: CanonicalResume,
+    source_kind: Optional[str],
+) -> CanonicalResume:
+    candidate_resume = CanonicalResume.model_validate(deepcopy(scoring_seed.model_dump()))
+    section = _candidate_section(candidate, source_kind=source_kind)
+
+    if section == 'experience':
+        candidate_resume.experience.append(
+            ExperienceEntry(
+                company=(candidate.company or candidate.title),
+                title=(candidate.role or candidate.title),
+                location=(candidate.location or candidate_resume.identity.location),
+                dates=candidate.dates or DateRange(),
+                bullets=list(candidate.bullets),
+            )
+        )
+        return candidate_resume
+
+    if section == 'coursework':
+        _add_coursework_evidence(candidate_resume, candidate)
+        return candidate_resume
+
+    candidate_resume.projects.append(
+        ProjectEntry(
+            name=candidate.title,
+            link=None,
+            dates=candidate.dates,
+            tech=list(candidate.tech),
+            bullets=list(candidate.bullets),
+            section=_project_section_from_tags(candidate.tags, candidate.title),
+        )
+    )
+    return candidate_resume
+
+
+def _ats_candidate_base_score(
+    *,
+    candidate: CandidateItem,
+    jd_text: str,
+    scoring_seed: CanonicalResume,
+    source_kind: Optional[str],
+) -> float:
+    candidate_resume = _candidate_resume_for_ats(candidate, scoring_seed=scoring_seed, source_kind=source_kind)
+    match_payload = compute_match_score(candidate_resume, jd_text)
+    return float(match_payload.get('overall_score', 0.0) or 0.0)
+
+
+def score_candidate_item(
+    candidate: CandidateItem,
+    jd: JDAnalysis,
+    context: Optional[ScoringContext] = None,
+    *,
+    jd_text: Optional[str] = None,
+    scoring_resume: Optional[CanonicalResume] = None,
+    source_kind: Optional[str] = None,
+) -> float:
+    _ = context  # Backward-compatible arg; ATS scoring is now canonical.
+    active_jd_text = (jd_text or _jd_analysis_to_text(jd)).strip()
+    if not active_jd_text:
+        return 0.0
+    scoring_seed = _scoring_seed_resume(scoring_resume)
+    score = _ats_candidate_base_score(
+        candidate=candidate,
+        jd_text=active_jd_text,
+        scoring_seed=scoring_seed,
+        source_kind=source_kind,
+    )
     return round(max(0.0, score), 3)
 
 
@@ -1010,15 +1089,26 @@ def score_candidates(
     jd: JDAnalysis,
     selection_feedback: Optional[Dict[str, List[str]]] = None,
     optimization_level: int = 1,
+    *,
+    jd_text: Optional[str] = None,
+    scoring_resume: Optional[CanonicalResume] = None,
 ) -> List[Tuple[CandidateSource, float]]:
-    scoring_context = _build_scoring_context(jd, [candidate_source.candidate for candidate_source in candidates])
+    active_jd_text = (jd_text or _jd_analysis_to_text(jd)).strip()
+    if not active_jd_text:
+        return []
+    scoring_seed = _scoring_seed_resume(scoring_resume)
     feedback_payload = selection_feedback or {}
     preferred_titles, preferred_terms = _parse_feedback_terms(feedback_payload.get('preferred_titles', []))
     blocked_titles, blocked_terms = _parse_feedback_terms(feedback_payload.get('blocked_titles', []))
 
     scored: List[Tuple[CandidateSource, float]] = []
     for candidate_source in candidates:
-        score = score_candidate_item(candidate_source.candidate, jd, context=scoring_context)
+        score = _ats_candidate_base_score(
+            candidate=candidate_source.candidate,
+            jd_text=active_jd_text,
+            scoring_seed=scoring_seed,
+            source_kind=str(candidate_source.origin.get('kind', '')),
+        )
         score += _feedback_adjustment(
             candidate_source.candidate,
             preferred_titles=preferred_titles,
@@ -1218,6 +1308,8 @@ def tailor_resume(
         jd,
         selection_feedback=selection_feedback,
         optimization_level=optimization_level,
+        jd_text=jd_text,
+        scoring_resume=base_resume,
     )
 
     known_terms = _collect_known_terms(candidates, jd)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -9,6 +10,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 
 from app.config import Settings, get_settings
 from app.models import CanonicalResume, JobRecord, JobSelectionFeedback, TailorMode, VaultItem
@@ -408,17 +410,16 @@ async def audit_run(
 @app.get('/resume/upload', response_class=HTMLResponse)
 async def resume_upload_page(request: Request) -> HTMLResponse:
     base_resume = repository.load_base_resume()
-    existing_yaml = None
-    if base_resume:
-        existing_yaml = yaml.safe_dump(base_resume.model_dump(exclude_none=True, mode='json'), sort_keys=False)
+    resume_form = _resume_to_form_payload(base_resume) if base_resume else None
     return render(
         request,
         'resume_upload.html',
         {
             'warnings': [],
             'error': None,
+            'field_errors': [],
             'raw_text': '',
-            'canonical_yaml': existing_yaml,
+            'resume_form': resume_form,
         },
     )
 
@@ -430,7 +431,7 @@ async def resume_upload_extract(request: Request, file: UploadFile = File(...)) 
         return render(
             request,
             'resume_upload.html',
-            {'warnings': warnings, 'error': 'No file provided.', 'raw_text': '', 'canonical_yaml': ''},
+            {'warnings': warnings, 'error': 'No file provided.', 'field_errors': [], 'raw_text': '', 'resume_form': None},
         )
 
     suffix = Path(file.filename).suffix.lower()
@@ -441,8 +442,9 @@ async def resume_upload_extract(request: Request, file: UploadFile = File(...)) 
             {
                 'warnings': warnings,
                 'error': 'Unsupported file type. Upload PDF or DOCX.',
+                'field_errors': [],
                 'raw_text': '',
-                'canonical_yaml': '',
+                'resume_form': None,
             },
         )
 
@@ -455,7 +457,7 @@ async def resume_upload_extract(request: Request, file: UploadFile = File(...)) 
         warnings.extend(extract_warnings)
         canonical, canonical_warnings = canonicalize_resume_text(raw_text, llm_service)
         warnings.extend(canonical_warnings)
-        canonical_yaml = yaml.safe_dump(canonical.model_dump(exclude_none=True, mode='json'), sort_keys=False)
+        resume_form = _resume_to_form_payload(canonical)
     except Exception as exc:
         return render(
             request,
@@ -463,27 +465,45 @@ async def resume_upload_extract(request: Request, file: UploadFile = File(...)) 
             {
                 'warnings': warnings,
                 'error': f'Extraction failed: {exc}',
+                'field_errors': [],
                 'raw_text': '',
-                'canonical_yaml': '',
+                'resume_form': None,
             },
         )
 
     return render(
         request,
         'resume_upload.html',
-        {'warnings': warnings, 'error': None, 'raw_text': raw_text, 'canonical_yaml': canonical_yaml},
+        {'warnings': warnings, 'error': None, 'field_errors': [], 'raw_text': raw_text, 'resume_form': resume_form},
     )
 
 
 @app.post('/resume/save')
-async def resume_save(canonical_yaml: str = Form(...)):
+async def resume_save(request: Request, canonical_yaml: Optional[str] = Form(default=None)):
+    source_payload: Optional[Dict[str, Any]] = None
     try:
-        parsed = yaml.safe_load(canonical_yaml)
-        if not isinstance(parsed, dict):
-            raise ValueError('YAML root must be an object.')
-        canonical = CanonicalResume.model_validate(parsed)
+        if canonical_yaml and canonical_yaml.strip():
+            source_payload = yaml.safe_load(canonical_yaml)
+            if not isinstance(source_payload, dict):
+                raise ValueError('YAML root must be an object.')
+        else:
+            form = await request.form()
+            source_payload = _parse_resume_form_payload(form)
+        canonical = CanonicalResume.model_validate(source_payload)
+    except ValidationError as exc:
+        return render(
+            request,
+            'resume_upload.html',
+            {
+                'warnings': [],
+                'error': 'Resume validation failed. Fix the fields below and resubmit.',
+                'field_errors': _format_validation_errors(exc),
+                'raw_text': '',
+                'resume_form': _resume_to_form_payload(source_payload),
+            },
+        )
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f'Invalid canonical YAML: {exc}') from exc
+        raise HTTPException(status_code=400, detail=f'Invalid resume payload: {exc}') from exc
 
     try:
         repository.save_base_resume(canonical)
@@ -512,26 +532,12 @@ async def vault_list(request: Request) -> HTMLResponse:
     return render(request, 'vault_list.html', {'items': items})
 
 
-def _default_vault_yaml() -> str:
-    payload = {
-        'type': 'project',
-        'title': 'New Vault Item',
-        'dates': {'start': '', 'end': ''},
-        'tags': [],
-        'tech': [],
-        'bullets': [{'text': ''}],
-        'links': [],
-        'source_artifacts': [],
-    }
-    return yaml.safe_dump(payload, sort_keys=False)
-
-
 @app.get('/vault/new', response_class=HTMLResponse)
 async def vault_new_page(request: Request) -> HTMLResponse:
     return render(
         request,
         'vault_form.html',
-        {'item_id': None, 'item_yaml': _default_vault_yaml(), 'error': None},
+        {'item_id': None, 'item_form': _default_vault_item_payload(), 'error': None, 'field_errors': []},
     )
 
 
@@ -545,7 +551,7 @@ async def vault_ingest_page(request: Request) -> HTMLResponse:
             'warnings': [],
             'source_text': '',
             'type_hint': 'project',
-            'parsed_yaml': None,
+            'parsed_item': None,
             'raw_text_preview': '',
         },
     )
@@ -559,7 +565,7 @@ async def vault_ingest_parse(
     file: Optional[UploadFile] = File(default=None),
 ) -> HTMLResponse:
     warnings = []
-    parsed_yaml: Optional[str] = None
+    parsed_item: Optional[Dict[str, Any]] = None
     raw_segments = []
     raw_text_preview = ''
     upload_path: Optional[Path] = None
@@ -586,7 +592,7 @@ async def vault_ingest_parse(
                     'warnings': warnings,
                     'source_text': source_text,
                     'type_hint': type_hint,
-                    'parsed_yaml': parsed_yaml,
+                    'parsed_item': parsed_item,
                     'raw_text_preview': raw_text_preview,
                 },
             )
@@ -600,7 +606,7 @@ async def vault_ingest_parse(
                 'warnings': warnings,
                 'source_text': source_text,
                 'type_hint': type_hint,
-                'parsed_yaml': parsed_yaml,
+                'parsed_item': parsed_item,
                 'raw_text_preview': raw_text_preview,
             },
         )
@@ -617,7 +623,7 @@ async def vault_ingest_parse(
             if path_text not in artifacts:
                 artifacts.append(path_text)
             item = item.model_copy(update={'source_artifacts': artifacts})
-        parsed_yaml = yaml.safe_dump(item.model_dump(exclude_none=True, mode='json'), sort_keys=False)
+        parsed_item = _vault_item_to_form_payload(item)
     except Exception as exc:
         return render(
             request,
@@ -627,7 +633,7 @@ async def vault_ingest_parse(
                 'warnings': warnings,
                 'source_text': source_text,
                 'type_hint': type_hint,
-                'parsed_yaml': parsed_yaml,
+                'parsed_item': parsed_item,
                 'raw_text_preview': raw_text_preview,
             },
         )
@@ -640,24 +646,44 @@ async def vault_ingest_parse(
             'warnings': warnings,
             'source_text': source_text,
             'type_hint': type_hint,
-            'parsed_yaml': parsed_yaml,
+            'parsed_item': parsed_item,
             'raw_text_preview': raw_text_preview,
         },
     )
 
 
 @app.post('/vault/new', response_class=HTMLResponse)
-async def vault_new(request: Request, item_yaml: str = Form(...)) -> HTMLResponse:
+async def vault_new(request: Request, item_yaml: Optional[str] = Form(default=None)) -> HTMLResponse:
+    parsed: Optional[Dict[str, Any]] = None
     try:
-        parsed = yaml.safe_load(item_yaml)
-        if not isinstance(parsed, dict):
-            raise ValueError('Vault YAML root must be an object.')
+        if item_yaml and item_yaml.strip():
+            parsed = yaml.safe_load(item_yaml)
+            if not isinstance(parsed, dict):
+                raise ValueError('Vault YAML root must be an object.')
+        else:
+            form = await request.form()
+            parsed = _parse_vault_form_payload(form)
         item = VaultItem.model_validate(parsed)
         item_id = uuid.uuid4().hex
         repository.save_vault_item(item_id, item)
         return RedirectResponse(url='/vault', status_code=303)
+    except ValidationError as exc:
+        return render(
+            request,
+            'vault_form.html',
+            {
+                'item_id': None,
+                'item_form': _vault_item_to_form_payload(parsed),
+                'error': 'Vault item validation failed. Fix the fields below and resubmit.',
+                'field_errors': _format_validation_errors(exc),
+            },
+        )
     except Exception as exc:
-        return render(request, 'vault_form.html', {'item_id': None, 'item_yaml': item_yaml, 'error': str(exc)})
+        return render(
+            request,
+            'vault_form.html',
+            {'item_id': None, 'item_form': _vault_item_to_form_payload(parsed), 'error': str(exc), 'field_errors': []},
+        )
 
 
 @app.get('/vault/{item_id}', response_class=HTMLResponse)
@@ -665,21 +691,44 @@ async def vault_edit_page(request: Request, item_id: str) -> HTMLResponse:
     item = repository.get_vault_item(item_id)
     if not item:
         raise HTTPException(status_code=404, detail='Vault item not found')
-    item_yaml = yaml.safe_dump(item.model_dump(exclude_none=True, mode='json'), sort_keys=False)
-    return render(request, 'vault_form.html', {'item_id': item_id, 'item_yaml': item_yaml, 'error': None})
+    return render(
+        request,
+        'vault_form.html',
+        {'item_id': item_id, 'item_form': _vault_item_to_form_payload(item), 'error': None, 'field_errors': []},
+    )
 
 
 @app.post('/vault/{item_id}', response_class=HTMLResponse)
-async def vault_edit(request: Request, item_id: str, item_yaml: str = Form(...)) -> HTMLResponse:
+async def vault_edit(request: Request, item_id: str, item_yaml: Optional[str] = Form(default=None)) -> HTMLResponse:
+    parsed: Optional[Dict[str, Any]] = None
     try:
-        parsed = yaml.safe_load(item_yaml)
-        if not isinstance(parsed, dict):
-            raise ValueError('Vault YAML root must be an object.')
+        if item_yaml and item_yaml.strip():
+            parsed = yaml.safe_load(item_yaml)
+            if not isinstance(parsed, dict):
+                raise ValueError('Vault YAML root must be an object.')
+        else:
+            form = await request.form()
+            parsed = _parse_vault_form_payload(form)
         item = VaultItem.model_validate(parsed)
         repository.save_vault_item(item_id, item)
         return RedirectResponse(url='/vault', status_code=303)
+    except ValidationError as exc:
+        return render(
+            request,
+            'vault_form.html',
+            {
+                'item_id': item_id,
+                'item_form': _vault_item_to_form_payload(parsed),
+                'error': 'Vault item validation failed. Fix the fields below and resubmit.',
+                'field_errors': _format_validation_errors(exc),
+            },
+        )
     except Exception as exc:
-        return render(request, 'vault_form.html', {'item_id': item_id, 'item_yaml': item_yaml, 'error': str(exc)})
+        return render(
+            request,
+            'vault_form.html',
+            {'item_id': item_id, 'item_form': _vault_item_to_form_payload(parsed), 'error': str(exc), 'field_errors': []},
+        )
 
 
 @app.post('/vault/{item_id}/delete')
@@ -1322,6 +1371,390 @@ async def compare_versions_endpoint(request: Request):
     if not isinstance(left, dict) or not isinstance(right, dict):
         raise HTTPException(status_code=400, detail='left and right version payloads are required.')
     return JSONResponse(content=compare_versions(left, right))
+
+
+def _format_validation_errors(exc: ValidationError) -> list[str]:
+    errors: list[str] = []
+    for row in exc.errors():
+        loc = '.'.join(str(part) for part in row.get('loc', []))
+        msg = str(row.get('msg', 'Invalid value'))
+        errors.append(f'{loc}: {msg}' if loc else msg)
+    return errors
+
+
+def _form_value(form: Any, key: str) -> str:
+    value = form.get(key, '')
+    if value is None:
+        return ''
+    return str(value).strip()
+
+
+def _to_text(value: Any) -> str:
+    if value is None:
+        return ''
+    return str(value).strip()
+
+
+def _split_multivalue(value: Any) -> list[str]:
+    raw = str(value or '').replace(',', '\n').replace(';', '\n')
+    seen: set[str] = set()
+    output: list[str] = []
+    for line in raw.splitlines():
+        cleaned = line.strip()
+        token = normalize_token(cleaned)
+        if not cleaned or not token or token in seen:
+            continue
+        seen.add(token)
+        output.append(cleaned)
+    return output
+
+
+def _coerce_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        output: list[str] = []
+        for item in value:
+            cleaned = _to_text(item)
+            if cleaned:
+                output.append(cleaned)
+        return output
+    if isinstance(value, tuple):
+        output: list[str] = []
+        for item in value:
+            cleaned = _to_text(item)
+            if cleaned:
+                output.append(cleaned)
+        return output
+    return _split_multivalue(value)
+
+
+def _extract_indexes(keys: Any, pattern: str) -> list[int]:
+    regex = re.compile(pattern)
+    indexes: set[int] = set()
+    for key in keys:
+        match = regex.match(str(key))
+        if match:
+            indexes.add(int(match.group(1)))
+    return sorted(indexes)
+
+
+def _has_nonempty(*values: Any) -> bool:
+    for value in values:
+        if isinstance(value, str):
+            if value.strip():
+                return True
+            continue
+        if isinstance(value, (list, tuple, set, dict)):
+            if value:
+                return True
+            continue
+        if value is not None:
+            return True
+    return False
+
+
+def _resume_to_form_payload(resume: Optional[Any]) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {}
+    if isinstance(resume, CanonicalResume):
+        payload = resume.model_dump(exclude_none=True, mode='json')
+    elif isinstance(resume, dict):
+        payload = resume
+
+    identity = payload.get('identity') if isinstance(payload.get('identity'), dict) else {}
+    identity_links = _coerce_string_list(identity.get('links'))
+    education_rows: list[Dict[str, Any]] = []
+    for row in payload.get('education') or []:
+        if not isinstance(row, dict):
+            continue
+        dates = row.get('dates') if isinstance(row.get('dates'), dict) else {}
+        education_rows.append(
+            {
+                'school': _to_text(row.get('school')),
+                'degree': _to_text(row.get('degree')),
+                'major': _to_text(row.get('major')),
+                'minors': _coerce_string_list(row.get('minors')),
+                'gpa': _to_text(row.get('gpa')),
+                'start': _to_text(dates.get('start')),
+                'end': _to_text(dates.get('end')),
+                'coursework': _coerce_string_list(row.get('coursework')),
+            }
+        )
+
+    experience_rows: list[Dict[str, Any]] = []
+    for row in payload.get('experience') or []:
+        if not isinstance(row, dict):
+            continue
+        dates = row.get('dates') if isinstance(row.get('dates'), dict) else {}
+        bullets = _coerce_string_list(row.get('bullets'))
+        experience_rows.append(
+            {
+                'company': _to_text(row.get('company')),
+                'title': _to_text(row.get('title')),
+                'location': _to_text(row.get('location')),
+                'start': _to_text(dates.get('start')),
+                'end': _to_text(dates.get('end')),
+                'bullets': bullets,
+            }
+        )
+
+    project_rows: list[Dict[str, Any]] = []
+    for row in payload.get('projects') or []:
+        if not isinstance(row, dict):
+            continue
+        dates = row.get('dates') if isinstance(row.get('dates'), dict) else {}
+        bullets = _coerce_string_list(row.get('bullets'))
+        project_rows.append(
+            {
+                'name': _to_text(row.get('name')),
+                'link': _to_text(row.get('link')),
+                'start': _to_text(dates.get('start')),
+                'end': _to_text(dates.get('end')),
+                'section': _to_text(row.get('section') or 'projects'),
+                'tech': _coerce_string_list(row.get('tech')),
+                'bullets': bullets,
+            }
+        )
+
+    categories_raw: Dict[str, Any] = {}
+    skills = payload.get('skills')
+    if isinstance(skills, dict) and isinstance(skills.get('categories'), dict):
+        categories_raw = skills.get('categories', {})
+    skill_categories = [
+        {'name': _to_text(name), 'values': _coerce_string_list(values)}
+        for name, values in categories_raw.items()
+        if _to_text(name)
+    ]
+
+    return {
+        'schema_version': _to_text(payload.get('schema_version') or '1.1.0') or '1.1.0',
+        'identity': {
+            'name': _to_text(identity.get('name')),
+            'email': _to_text(identity.get('email')),
+            'phone': _to_text(identity.get('phone')),
+            'location': _to_text(identity.get('location')),
+            'links': identity_links,
+        },
+        'summary': _to_text(payload.get('summary')),
+        'education': education_rows,
+        'experience': experience_rows,
+        'projects': project_rows,
+        'skill_categories': skill_categories,
+        'certifications': _coerce_string_list(payload.get('certifications')),
+        'awards': _coerce_string_list(payload.get('awards')),
+    }
+
+
+def _parse_resume_form_payload(form: Any) -> Dict[str, Any]:
+    identity = {
+        'name': _form_value(form, 'identity_name'),
+        'email': _form_value(form, 'identity_email'),
+        'phone': _form_value(form, 'identity_phone'),
+        'location': _form_value(form, 'identity_location'),
+        'links': [],
+    }
+    for index in _extract_indexes(form.keys(), r'^identity_link_(\d+)$'):
+        value = _form_value(form, f'identity_link_{index}')
+        if value:
+            identity['links'].append(value)
+
+    education_rows: list[Dict[str, Any]] = []
+    for index in _extract_indexes(form.keys(), r'^education_(\d+)_'):
+        school = _form_value(form, f'education_{index}_school')
+        degree = _form_value(form, f'education_{index}_degree')
+        major = _form_value(form, f'education_{index}_major')
+        gpa = _form_value(form, f'education_{index}_gpa')
+        start = _form_value(form, f'education_{index}_start')
+        end = _form_value(form, f'education_{index}_end')
+        minors = _split_multivalue(_form_value(form, f'education_{index}_minors'))
+        coursework = _split_multivalue(_form_value(form, f'education_{index}_coursework'))
+        if not _has_nonempty(school, degree, major, gpa, start, end, minors, coursework):
+            continue
+        education_rows.append(
+            {
+                'school': school,
+                'degree': degree,
+                'major': major,
+                'minors': minors,
+                'gpa': gpa,
+                'dates': {'start': start, 'end': end},
+                'coursework': coursework,
+            }
+        )
+
+    experience_rows: list[Dict[str, Any]] = []
+    for index in _extract_indexes(form.keys(), r'^experience_(\d+)_'):
+        company = _form_value(form, f'experience_{index}_company')
+        title = _form_value(form, f'experience_{index}_title')
+        location = _form_value(form, f'experience_{index}_location')
+        start = _form_value(form, f'experience_{index}_start')
+        end = _form_value(form, f'experience_{index}_end')
+        bullets: list[str] = []
+        bullet_indexes = _extract_indexes(form.keys(), rf'^experience_{index}_bullet_(\d+)$')
+        for bullet_index in bullet_indexes:
+            bullet = _form_value(form, f'experience_{index}_bullet_{bullet_index}')
+            if bullet:
+                bullets.append(bullet)
+        if not _has_nonempty(company, title, location, start, end, bullets):
+            continue
+        experience_rows.append(
+            {
+                'company': company,
+                'title': title,
+                'location': location,
+                'dates': {'start': start, 'end': end},
+                'bullets': bullets,
+            }
+        )
+
+    project_rows: list[Dict[str, Any]] = []
+    for index in _extract_indexes(form.keys(), r'^project_(\d+)_'):
+        name = _form_value(form, f'project_{index}_name')
+        link = _form_value(form, f'project_{index}_link')
+        start = _form_value(form, f'project_{index}_start')
+        end = _form_value(form, f'project_{index}_end')
+        section = _form_value(form, f'project_{index}_section') or 'projects'
+        tech = _split_multivalue(_form_value(form, f'project_{index}_tech'))
+        bullets: list[str] = []
+        bullet_indexes = _extract_indexes(form.keys(), rf'^project_{index}_bullet_(\d+)$')
+        for bullet_index in bullet_indexes:
+            bullet = _form_value(form, f'project_{index}_bullet_{bullet_index}')
+            if bullet:
+                bullets.append(bullet)
+        if not _has_nonempty(name, link, start, end, tech, bullets):
+            continue
+        project_payload: Dict[str, Any] = {
+            'name': name,
+            'link': link or None,
+            'tech': tech,
+            'bullets': bullets,
+            'section': section,
+        }
+        if _has_nonempty(start, end):
+            project_payload['dates'] = {'start': start, 'end': end}
+        project_rows.append(project_payload)
+
+    categories: Dict[str, list[str]] = {}
+    for index in _extract_indexes(form.keys(), r'^skill_category_(\d+)_'):
+        name = _form_value(form, f'skill_category_{index}_name')
+        values = _split_multivalue(_form_value(form, f'skill_category_{index}_values'))
+        if not name:
+            continue
+        categories[name] = values
+
+    return {
+        'schema_version': _form_value(form, 'schema_version') or '1.1.0',
+        'identity': identity,
+        'summary': _form_value(form, 'summary') or None,
+        'education': education_rows,
+        'experience': experience_rows,
+        'projects': project_rows,
+        'skills': {'categories': categories},
+        'certifications': _split_multivalue(_form_value(form, 'certifications_text')),
+        'awards': _split_multivalue(_form_value(form, 'awards_text')),
+    }
+
+
+def _default_vault_item_payload() -> Dict[str, Any]:
+    return _vault_item_to_form_payload(
+        {
+            'type': 'project',
+            'title': '',
+            'dates': {'start': '', 'end': ''},
+            'tags': [],
+            'tech': [],
+            'bullets': [{'text': ''}],
+            'links': [],
+            'source_artifacts': [],
+        }
+    )
+
+
+def _vault_item_to_form_payload(item: Optional[Any]) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {}
+    if isinstance(item, VaultItem):
+        payload = item.model_dump(exclude_none=True, mode='json')
+    elif isinstance(item, dict):
+        payload = item
+
+    dates = payload.get('dates') if isinstance(payload.get('dates'), dict) else {}
+    bullets: list[Dict[str, Any]] = []
+    for row in payload.get('bullets') or []:
+        if isinstance(row, str):
+            row = {'text': row}
+        if not isinstance(row, dict):
+            continue
+        bullets.append(
+            {
+                'text': _to_text(row.get('text')),
+                'situation': _to_text(row.get('situation')),
+                'task': _to_text(row.get('task')),
+                'action': _to_text(row.get('action')),
+                'outcome': _to_text(row.get('outcome')),
+                'impact': _to_text(row.get('impact')),
+            }
+        )
+    if not bullets:
+        bullets = [{'text': '', 'situation': '', 'task': '', 'action': '', 'outcome': '', 'impact': ''}]
+
+    return {
+        'type': _to_text(payload.get('type') or 'project'),
+        'title': _to_text(payload.get('title')),
+        'start': _to_text(dates.get('start')),
+        'end': _to_text(dates.get('end')),
+        'tags': _coerce_string_list(payload.get('tags')),
+        'tech': _coerce_string_list(payload.get('tech')),
+        'bullets': bullets,
+        'links': _coerce_string_list(payload.get('links')),
+        'source_artifacts': _coerce_string_list(payload.get('source_artifacts')),
+    }
+
+
+def _parse_vault_form_payload(form: Any) -> Dict[str, Any]:
+    item_type = _form_value(form, 'type') or 'project'
+    title = _form_value(form, 'title')
+    start = _form_value(form, 'start')
+    end = _form_value(form, 'end')
+    tags = _split_multivalue(_form_value(form, 'tags_text'))
+    tech = _split_multivalue(_form_value(form, 'tech_text'))
+    links = _split_multivalue(_form_value(form, 'links_text'))
+    source_artifacts = _split_multivalue(_form_value(form, 'source_artifacts_text'))
+
+    bullets: list[Dict[str, Any]] = []
+    for index in _extract_indexes(form.keys(), r'^bullet_(\d+)_'):
+        text = _form_value(form, f'bullet_{index}_text')
+        situation = _form_value(form, f'bullet_{index}_situation')
+        task = _form_value(form, f'bullet_{index}_task')
+        action = _form_value(form, f'bullet_{index}_action')
+        outcome = _form_value(form, f'bullet_{index}_outcome')
+        impact = _form_value(form, f'bullet_{index}_impact')
+        if not _has_nonempty(text, situation, task, action, outcome, impact):
+            continue
+        bullet_payload: Dict[str, Any] = {'text': text}
+        if situation:
+            bullet_payload['situation'] = situation
+        if task:
+            bullet_payload['task'] = task
+        if action:
+            bullet_payload['action'] = action
+        if outcome:
+            bullet_payload['outcome'] = outcome
+        if impact:
+            bullet_payload['impact'] = impact
+        bullets.append(bullet_payload)
+
+    payload: Dict[str, Any] = {
+        'type': item_type,
+        'title': title,
+        'tags': tags,
+        'tech': tech,
+        'bullets': bullets,
+        'links': links,
+        'source_artifacts': source_artifacts,
+    }
+    if _has_nonempty(start, end):
+        payload['dates'] = {'start': start, 'end': end}
+    return payload
 
 
 def _clean_payload_text(value: Any) -> str:

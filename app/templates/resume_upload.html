@@ -25,17 +25,448 @@
 </section>
 {% endif %}
 
-{% if canonical_yaml %}
+{% if resume_form %}
 <section class="card">
-  <h2>Canonical Resume YAML (Source of Truth)</h2>
-  <p class="muted">Project entries support <code>section: projects</code> or <code>section: minor_projects</code>.</p>
-  <form method="post" action="/resume/save">
-    <textarea name="canonical_yaml" rows="28" required>{{ canonical_yaml }}</textarea>
+  <h2>Canonical Resume Details</h2>
+  <p class="muted">Edit structured fields below. YAML stays internal and is not shown in the UI.</p>
+  {% if field_errors %}
+    <ul class="warn-text">
+      {% for field_error in field_errors %}
+      <li>{{ field_error }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <form method="post" action="/resume/save" id="resume-form">
+    <label>Schema Version</label>
+    <input type="text" name="schema_version" value="{{ resume_form.schema_version }}" required />
+
+    <h3>Identity</h3>
+    <div class="grid-two">
+      <div>
+        <label>Name</label>
+        <input type="text" name="identity_name" value="{{ resume_form.identity.name }}" required />
+      </div>
+      <div>
+        <label>Email</label>
+        <input type="email" name="identity_email" value="{{ resume_form.identity.email }}" required />
+      </div>
+      <div>
+        <label>Phone</label>
+        <input type="text" name="identity_phone" value="{{ resume_form.identity.phone }}" required />
+      </div>
+      <div>
+        <label>Location</label>
+        <input type="text" name="identity_location" value="{{ resume_form.identity.location }}" required />
+      </div>
+    </div>
+
+    <div class="section-divider"></div>
+    <label>Links</label>
+    {% set identity_links = resume_form.identity.links if resume_form.identity.links else [''] %}
+    <div id="identity-links-list" class="stacked-list" data-next-index="{{ identity_links|length }}">
+      {% for link in identity_links %}
+      <div class="dynamic-row">
+        <input type="text" name="identity_link_{{ loop.index0 }}" value="{{ link }}" placeholder="https://..." />
+        <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+      </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="btn-small" data-add-entry data-target="identity-links-list" data-template="identity-link-template">Add Link</button>
+
+    <h3>Summary</h3>
+    <textarea name="summary" rows="4" placeholder="Short summary statement...">{{ resume_form.summary }}</textarea>
+
+    <h3>Education</h3>
+    {% set education_rows = resume_form.education if resume_form.education else [
+      {'school':'', 'degree':'', 'major':'', 'gpa':'', 'start':'', 'end':'', 'minors':[], 'coursework':[]}
+    ] %}
+    <div id="education-list" class="entry-list" data-next-index="{{ education_rows|length }}">
+      {% for edu in education_rows %}
+      <div class="entry-card">
+        <div class="entry-header">
+          <strong>Education Entry</strong>
+          <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+        </div>
+        <div class="grid-two">
+          <div>
+            <label>School</label>
+            <input type="text" name="education_{{ loop.index0 }}_school" value="{{ edu.school }}" />
+          </div>
+          <div>
+            <label>Degree</label>
+            <input type="text" name="education_{{ loop.index0 }}_degree" value="{{ edu.degree }}" />
+          </div>
+          <div>
+            <label>Major</label>
+            <input type="text" name="education_{{ loop.index0 }}_major" value="{{ edu.major }}" />
+          </div>
+          <div>
+            <label>GPA</label>
+            <input type="text" name="education_{{ loop.index0 }}_gpa" value="{{ edu.gpa }}" />
+          </div>
+          <div>
+            <label>Start Date</label>
+            <input type="text" name="education_{{ loop.index0 }}_start" value="{{ edu.start }}" placeholder="Aug 2022" />
+          </div>
+          <div>
+            <label>End Date</label>
+            <input type="text" name="education_{{ loop.index0 }}_end" value="{{ edu.end }}" placeholder="May 2026" />
+          </div>
+        </div>
+        <label>Minors (comma or newline separated)</label>
+        <textarea name="education_{{ loop.index0 }}_minors" rows="2">{{ edu.minors | join('\n') }}</textarea>
+        <label>Coursework (comma or newline separated)</label>
+        <textarea name="education_{{ loop.index0 }}_coursework" rows="3">{{ edu.coursework | join('\n') }}</textarea>
+      </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="btn-small" data-add-entry data-target="education-list" data-template="education-template">Add Education Entry</button>
+
+    <h3>Experience</h3>
+    {% set experience_rows = resume_form.experience if resume_form.experience else [
+      {'company':'', 'title':'', 'location':'', 'start':'', 'end':'', 'bullets':['']}
+    ] %}
+    <div id="experience-list" class="entry-list" data-next-index="{{ experience_rows|length }}">
+      {% for exp in experience_rows %}
+      {% set exp_index = loop.index0 %}
+      {% set exp_bullets = exp.bullets if exp.bullets else [''] %}
+      <div class="entry-card">
+        <div class="entry-header">
+          <strong>Experience Entry</strong>
+          <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+        </div>
+        <div class="grid-two">
+          <div>
+            <label>Company</label>
+            <input type="text" name="experience_{{ exp_index }}_company" value="{{ exp.company }}" />
+          </div>
+          <div>
+            <label>Title</label>
+            <input type="text" name="experience_{{ exp_index }}_title" value="{{ exp.title }}" />
+          </div>
+          <div>
+            <label>Location</label>
+            <input type="text" name="experience_{{ exp_index }}_location" value="{{ exp.location }}" />
+          </div>
+          <div>
+            <label>Start Date</label>
+            <input type="text" name="experience_{{ exp_index }}_start" value="{{ exp.start }}" />
+          </div>
+          <div>
+            <label>End Date</label>
+            <input type="text" name="experience_{{ exp_index }}_end" value="{{ exp.end }}" />
+          </div>
+        </div>
+
+        <div class="bullet-editor" data-bullet-editor>
+          <label>Bullets</label>
+          <div class="stacked-list" data-bullet-list data-prefix="experience_{{ exp_index }}_bullet" data-next-index="{{ exp_bullets|length }}">
+            {% for bullet in exp_bullets %}
+            <div class="dynamic-row bullet-row">
+              <input type="text" name="experience_{{ exp_index }}_bullet_{{ loop.index0 }}" value="{{ bullet }}" placeholder="Describe impact, scope, or outcome" />
+              <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+            </div>
+            {% endfor %}
+          </div>
+          <button type="button" class="btn-small" data-add-bullet>Add Bullet</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="btn-small" data-add-entry data-target="experience-list" data-template="experience-template">Add Experience Entry</button>
+
+    <h3>Projects</h3>
+    {% set project_rows = resume_form.projects if resume_form.projects else [
+      {'name':'', 'link':'', 'start':'', 'end':'', 'section':'projects', 'tech':[], 'bullets':['']}
+    ] %}
+    <div id="projects-list" class="entry-list" data-next-index="{{ project_rows|length }}">
+      {% for project in project_rows %}
+      {% set project_index = loop.index0 %}
+      {% set project_bullets = project.bullets if project.bullets else [''] %}
+      <div class="entry-card">
+        <div class="entry-header">
+          <strong>Project Entry</strong>
+          <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+        </div>
+        <div class="grid-two">
+          <div>
+            <label>Name</label>
+            <input type="text" name="project_{{ project_index }}_name" value="{{ project.name }}" />
+          </div>
+          <div>
+            <label>Link</label>
+            <input type="text" name="project_{{ project_index }}_link" value="{{ project.link }}" placeholder="https://..." />
+          </div>
+          <div>
+            <label>Section</label>
+            <select name="project_{{ project_index }}_section">
+              <option value="projects" {% if project.section == 'projects' %}selected{% endif %}>projects</option>
+              <option value="minor_projects" {% if project.section == 'minor_projects' %}selected{% endif %}>minor_projects</option>
+            </select>
+          </div>
+          <div>
+            <label>Tech (comma or newline separated)</label>
+            <textarea name="project_{{ project_index }}_tech" rows="2">{{ project.tech | join('\n') }}</textarea>
+          </div>
+          <div>
+            <label>Start Date</label>
+            <input type="text" name="project_{{ project_index }}_start" value="{{ project.start }}" />
+          </div>
+          <div>
+            <label>End Date</label>
+            <input type="text" name="project_{{ project_index }}_end" value="{{ project.end }}" />
+          </div>
+        </div>
+
+        <div class="bullet-editor" data-bullet-editor>
+          <label>Bullets</label>
+          <div class="stacked-list" data-bullet-list data-prefix="project_{{ project_index }}_bullet" data-next-index="{{ project_bullets|length }}">
+            {% for bullet in project_bullets %}
+            <div class="dynamic-row bullet-row">
+              <input type="text" name="project_{{ project_index }}_bullet_{{ loop.index0 }}" value="{{ bullet }}" placeholder="Describe impact, scope, or outcome" />
+              <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+            </div>
+            {% endfor %}
+          </div>
+          <button type="button" class="btn-small" data-add-bullet>Add Bullet</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="btn-small" data-add-entry data-target="projects-list" data-template="project-template">Add Project Entry</button>
+
+    <h3>Skills</h3>
+    {% set category_rows = resume_form.skill_categories if resume_form.skill_categories else [ {'name':'', 'values':[]} ] %}
+    <div id="skill-category-list" class="entry-list" data-next-index="{{ category_rows|length }}">
+      {% for category in category_rows %}
+      <div class="dynamic-row">
+        <input type="text" name="skill_category_{{ loop.index0 }}_name" value="{{ category.name }}" placeholder="Category name (e.g., Languages)" />
+        <textarea name="skill_category_{{ loop.index0 }}_values" rows="2" placeholder="Python, Java, SQL">{{ category.values | join('\n') }}</textarea>
+        <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+      </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="btn-small" data-add-entry data-target="skill-category-list" data-template="skill-category-template">Add Skill Category</button>
+
+    <h3>Certifications</h3>
+    <textarea name="certifications_text" rows="3" placeholder="One certification per line">{{ resume_form.certifications | join('\n') }}</textarea>
+
+    <h3>Awards</h3>
+    <textarea name="awards_text" rows="3" placeholder="One award per line">{{ resume_form.awards | join('\n') }}</textarea>
+
     <button type="submit">Save Canonical Resume</button>
   </form>
+
   <form method="post" action="/resume/sync-vault">
     <button type="submit">Resync Base Resume Into Vault</button>
   </form>
 </section>
+
+<template id="identity-link-template">
+  <div class="dynamic-row">
+    <input type="text" name="identity_link___INDEX__" placeholder="https://..." />
+    <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+  </div>
+</template>
+
+<template id="education-template">
+  <div class="entry-card">
+    <div class="entry-header">
+      <strong>Education Entry</strong>
+      <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+    </div>
+    <div class="grid-two">
+      <div>
+        <label>School</label>
+        <input type="text" name="education___INDEX___school" />
+      </div>
+      <div>
+        <label>Degree</label>
+        <input type="text" name="education___INDEX___degree" />
+      </div>
+      <div>
+        <label>Major</label>
+        <input type="text" name="education___INDEX___major" />
+      </div>
+      <div>
+        <label>GPA</label>
+        <input type="text" name="education___INDEX___gpa" />
+      </div>
+      <div>
+        <label>Start Date</label>
+        <input type="text" name="education___INDEX___start" />
+      </div>
+      <div>
+        <label>End Date</label>
+        <input type="text" name="education___INDEX___end" />
+      </div>
+    </div>
+    <label>Minors (comma or newline separated)</label>
+    <textarea name="education___INDEX___minors" rows="2"></textarea>
+    <label>Coursework (comma or newline separated)</label>
+    <textarea name="education___INDEX___coursework" rows="3"></textarea>
+  </div>
+</template>
+
+<template id="experience-template">
+  <div class="entry-card">
+    <div class="entry-header">
+      <strong>Experience Entry</strong>
+      <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+    </div>
+    <div class="grid-two">
+      <div>
+        <label>Company</label>
+        <input type="text" name="experience___INDEX___company" />
+      </div>
+      <div>
+        <label>Title</label>
+        <input type="text" name="experience___INDEX___title" />
+      </div>
+      <div>
+        <label>Location</label>
+        <input type="text" name="experience___INDEX___location" />
+      </div>
+      <div>
+        <label>Start Date</label>
+        <input type="text" name="experience___INDEX___start" />
+      </div>
+      <div>
+        <label>End Date</label>
+        <input type="text" name="experience___INDEX___end" />
+      </div>
+    </div>
+
+    <div class="bullet-editor" data-bullet-editor>
+      <label>Bullets</label>
+      <div class="stacked-list" data-bullet-list data-prefix="experience___INDEX___bullet" data-next-index="1">
+        <div class="dynamic-row bullet-row">
+          <input type="text" name="experience___INDEX___bullet_0" placeholder="Describe impact, scope, or outcome" />
+          <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+        </div>
+      </div>
+      <button type="button" class="btn-small" data-add-bullet>Add Bullet</button>
+    </div>
+  </div>
+</template>
+
+<template id="project-template">
+  <div class="entry-card">
+    <div class="entry-header">
+      <strong>Project Entry</strong>
+      <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+    </div>
+    <div class="grid-two">
+      <div>
+        <label>Name</label>
+        <input type="text" name="project___INDEX___name" />
+      </div>
+      <div>
+        <label>Link</label>
+        <input type="text" name="project___INDEX___link" placeholder="https://..." />
+      </div>
+      <div>
+        <label>Section</label>
+        <select name="project___INDEX___section">
+          <option value="projects">projects</option>
+          <option value="minor_projects">minor_projects</option>
+        </select>
+      </div>
+      <div>
+        <label>Tech (comma or newline separated)</label>
+        <textarea name="project___INDEX___tech" rows="2"></textarea>
+      </div>
+      <div>
+        <label>Start Date</label>
+        <input type="text" name="project___INDEX___start" />
+      </div>
+      <div>
+        <label>End Date</label>
+        <input type="text" name="project___INDEX___end" />
+      </div>
+    </div>
+
+    <div class="bullet-editor" data-bullet-editor>
+      <label>Bullets</label>
+      <div class="stacked-list" data-bullet-list data-prefix="project___INDEX___bullet" data-next-index="1">
+        <div class="dynamic-row bullet-row">
+          <input type="text" name="project___INDEX___bullet_0" placeholder="Describe impact, scope, or outcome" />
+          <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+        </div>
+      </div>
+      <button type="button" class="btn-small" data-add-bullet>Add Bullet</button>
+    </div>
+  </div>
+</template>
+
+<template id="skill-category-template">
+  <div class="dynamic-row">
+    <input type="text" name="skill_category___INDEX___name" placeholder="Category name" />
+    <textarea name="skill_category___INDEX___values" rows="2" placeholder="Python, Java, SQL"></textarea>
+    <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+  </div>
+</template>
+
+<script>
+(function () {
+  function interpolate(template, index) {
+    return template.replace(/__INDEX__/g, String(index));
+  }
+
+  function addEntry(targetId, templateId) {
+    const container = document.getElementById(targetId);
+    const template = document.getElementById(templateId);
+    if (!container || !template) {
+      return;
+    }
+    const next = Number(container.dataset.nextIndex || '0');
+    container.insertAdjacentHTML('beforeend', interpolate(template.innerHTML, next));
+    container.dataset.nextIndex = String(next + 1);
+  }
+
+  function bulletRow(prefix, index) {
+    return [
+      '<div class="dynamic-row bullet-row">',
+      '<input type="text" name="' + prefix + '_' + index + '" placeholder="Describe impact, scope, or outcome" />',
+      '<button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>',
+      '</div>'
+    ].join('');
+  }
+
+  document.addEventListener('click', function (event) {
+    const addEntryButton = event.target.closest('[data-add-entry]');
+    if (addEntryButton) {
+      addEntry(addEntryButton.dataset.target, addEntryButton.dataset.template);
+      return;
+    }
+
+    const addBulletButton = event.target.closest('[data-add-bullet]');
+    if (addBulletButton) {
+      const editor = addBulletButton.closest('[data-bullet-editor]');
+      if (!editor) {
+        return;
+      }
+      const list = editor.querySelector('[data-bullet-list]');
+      if (!list) {
+        return;
+      }
+      const prefix = list.dataset.prefix;
+      const next = Number(list.dataset.nextIndex || '0');
+      list.insertAdjacentHTML('beforeend', bulletRow(prefix, next));
+      list.dataset.nextIndex = String(next + 1);
+      return;
+    }
+
+    const removeButton = event.target.closest('[data-remove-row]');
+    if (removeButton) {
+      const row = removeButton.closest('.dynamic-row, .entry-card');
+      if (row) {
+        row.remove();
+      }
+    }
+  });
+})();
+</script>
 {% endif %}
 {% endblock %}

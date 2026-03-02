@@ -1,0 +1,76 @@
+<div class="grid-two">
+  <div>
+    <label>Type</label>
+    <select name="type" required>
+      <option value="project" {% if item_form.type == 'project' %}selected{% endif %}>project</option>
+      <option value="job" {% if item_form.type == 'job' %}selected{% endif %}>job</option>
+      <option value="club" {% if item_form.type == 'club' %}selected{% endif %}>club</option>
+      <option value="coursework" {% if item_form.type == 'coursework' %}selected{% endif %}>coursework</option>
+      <option value="award" {% if item_form.type == 'award' %}selected{% endif %}>award</option>
+      <option value="skillset" {% if item_form.type == 'skillset' %}selected{% endif %}>skillset</option>
+      <option value="other" {% if item_form.type == 'other' %}selected{% endif %}>other</option>
+    </select>
+  </div>
+  <div>
+    <label>Title</label>
+    <input type="text" name="title" value="{{ item_form.title }}" required />
+  </div>
+  <div>
+    <label>Start Date</label>
+    <input type="text" name="start" value="{{ item_form.start }}" placeholder="Jan 2024" />
+  </div>
+  <div>
+    <label>End Date</label>
+    <input type="text" name="end" value="{{ item_form.end }}" placeholder="Present" />
+  </div>
+</div>
+
+<label>Tags (comma or newline separated)</label>
+<textarea name="tags_text" rows="2">{{ item_form.tags | join('\n') }}</textarea>
+
+<label>Tech (comma or newline separated)</label>
+<textarea name="tech_text" rows="3">{{ item_form.tech | join('\n') }}</textarea>
+
+<div class="bullet-editor" data-bullet-editor>
+  <label>Bullets</label>
+  {% set bullet_rows = item_form.bullets if item_form.bullets else [ {'text':'', 'situation':'', 'task':'', 'action':'', 'outcome':'', 'impact':''} ] %}
+  <div class="entry-list" data-bullet-list data-prefix="bullet" data-next-index="{{ bullet_rows|length }}">
+    {% for bullet in bullet_rows %}
+    <div class="entry-card dynamic-row">
+      <div class="entry-header">
+        <strong>Bullet</strong>
+        <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+      </div>
+      <label>Text</label>
+      <input type="text" name="bullet_{{ loop.index0 }}_text" value="{{ bullet.text }}" placeholder="Built a ... that improved ..." />
+      <div class="grid-two">
+        <div>
+          <label>Situation</label>
+          <input type="text" name="bullet_{{ loop.index0 }}_situation" value="{{ bullet.situation }}" />
+        </div>
+        <div>
+          <label>Task</label>
+          <input type="text" name="bullet_{{ loop.index0 }}_task" value="{{ bullet.task }}" />
+        </div>
+        <div>
+          <label>Action</label>
+          <input type="text" name="bullet_{{ loop.index0 }}_action" value="{{ bullet.action }}" />
+        </div>
+        <div>
+          <label>Outcome</label>
+          <input type="text" name="bullet_{{ loop.index0 }}_outcome" value="{{ bullet.outcome }}" />
+        </div>
+      </div>
+      <label>Impact</label>
+      <input type="text" name="bullet_{{ loop.index0 }}_impact" value="{{ bullet.impact }}" />
+    </div>
+    {% endfor %}
+  </div>
+  <button type="button" class="btn-small" data-add-vault-bullet>Add Bullet</button>
+</div>
+
+<label>Links (comma or newline separated)</label>
+<textarea name="links_text" rows="2">{{ item_form.links | join('\n') }}</textarea>
+
+<label>Source Artifacts (comma or newline separated)</label>
+<textarea name="source_artifacts_text" rows="3">{{ item_form.source_artifacts | join('\n') }}</textarea>

@@ -69,7 +69,7 @@ Everything else becomes hidden power-user tools.
 
 ⸻
 
-Step 3: Unify the Scoring Logic
+Step 3: Unify the Scoring Logic [COMPLETE - 2026-03-02]
 
 Right now:
 	•	Tailoring selection uses one scorer.
@@ -87,7 +87,7 @@ This reduces tuning chaos and weird behavior.
 
 ⸻
 
-Step 4: Kill Raw YAML UI
+Step 4: Kill Raw YAML UI [COMPLETE - 2026-03-02]
 
 This is the biggest product barrier.
 

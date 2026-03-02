@@ -2,18 +2,95 @@
 {% block content %}
 <section class="card">
   <h2>{% if item_id %}Edit{% else %}Create{% endif %} Vault Item</h2>
-  <p class="muted">Tip: add tag <code>section:minor_projects</code> to place a project in the Minor Projects section.</p>
+  <p class="muted">Use structured fields below. Tag with <code>section:minor_projects</code> to place a project under Minor Projects.</p>
+
   {% if error %}
     <p class="warn-text">{{ error }}</p>
   {% endif %}
+
+  {% if field_errors %}
+    <ul class="warn-text">
+      {% for field_error in field_errors %}
+      <li>{{ field_error }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
   <form method="post" action="{% if item_id %}/vault/{{ item_id }}{% else %}/vault/new{% endif %}">
-    <textarea name="item_yaml" rows="28" required>{{ item_yaml }}</textarea>
+    {% include "_vault_item_fields.html" %}
     <button type="submit">Save Vault Item</button>
   </form>
+
   {% if item_id %}
   <form method="post" action="/vault/{{ item_id }}/delete" onsubmit="return confirm('Delete this vault item?');">
     <button class="btn-danger" type="submit">Delete Vault Item</button>
   </form>
   {% endif %}
 </section>
+
+<template id="vault-bullet-template">
+  <div class="entry-card dynamic-row">
+    <div class="entry-header">
+      <strong>Bullet</strong>
+      <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+    </div>
+    <label>Text</label>
+    <input type="text" name="bullet___INDEX___text" placeholder="Built a ... that improved ..." />
+    <div class="grid-two">
+      <div>
+        <label>Situation</label>
+        <input type="text" name="bullet___INDEX___situation" />
+      </div>
+      <div>
+        <label>Task</label>
+        <input type="text" name="bullet___INDEX___task" />
+      </div>
+      <div>
+        <label>Action</label>
+        <input type="text" name="bullet___INDEX___action" />
+      </div>
+      <div>
+        <label>Outcome</label>
+        <input type="text" name="bullet___INDEX___outcome" />
+      </div>
+    </div>
+    <label>Impact</label>
+    <input type="text" name="bullet___INDEX___impact" />
+  </div>
+</template>
+
+<script>
+(function () {
+  function interpolate(template, index) {
+    return template.replace(/__INDEX__/g, String(index));
+  }
+
+  document.addEventListener('click', function (event) {
+    const addBulletButton = event.target.closest('[data-add-vault-bullet]');
+    if (addBulletButton) {
+      const editor = addBulletButton.closest('[data-bullet-editor]');
+      if (!editor) {
+        return;
+      }
+      const list = editor.querySelector('[data-bullet-list]');
+      const template = document.getElementById('vault-bullet-template');
+      if (!list || !template) {
+        return;
+      }
+      const next = Number(list.dataset.nextIndex || '0');
+      list.insertAdjacentHTML('beforeend', interpolate(template.innerHTML, next));
+      list.dataset.nextIndex = String(next + 1);
+      return;
+    }
+
+    const removeButton = event.target.closest('[data-remove-row]');
+    if (removeButton) {
+      const row = removeButton.closest('.dynamic-row, .entry-card');
+      if (row) {
+        row.remove();
+      }
+    }
+  });
+})();
+</script>
 {% endblock %}

@@ -2,7 +2,7 @@
 {% block content %}
 <section class="card">
   <h2>Ingest Vault Item From Notes / Example</h2>
-  <p class="muted">Paste rough notes, old project descriptions, interview transcript snippets, or upload a PDF/DOCX/TXT. The app parses to vault schema and lets you review YAML before saving.</p>
+  <p class="muted">Paste rough notes, old project descriptions, interview transcript snippets, or upload a file. The parser proposes structured fields for review before saving.</p>
 
   {% if error %}
     <p class="warn-text">{{ error }}</p>
@@ -31,10 +31,10 @@
     <label>Paste Notes / Example</label>
     <textarea name="source_text" rows="14" placeholder="Example: Built an internal ETL project in Python...">{{ source_text }}</textarea>
 
-    <label>Optional Upload (PDF, DOCX, TXT, MD, YAML, JSON)</label>
+    <label>Optional Upload (PDF, DOCX, TXT, MD, JSON)</label>
     <input type="file" name="file" accept=".pdf,.docx,.txt,.md,.rst,.rtf,.yaml,.yml,.json" />
 
-    <button type="submit">Parse To Vault YAML</button>
+    <button type="submit">Parse Into Structured Fields</button>
   </form>
 </section>
 
@@ -45,13 +45,81 @@
 </section>
 {% endif %}
 
-{% if parsed_yaml %}
+{% if parsed_item %}
 <section class="card">
-  <h2>Parsed Vault YAML</h2>
+  <h2>Review Parsed Vault Item</h2>
+  <p class="muted">Edit any fields below, then save.</p>
   <form method="post" action="/vault/new">
-    <textarea name="item_yaml" rows="24" required>{{ parsed_yaml }}</textarea>
+    {% set item_form = parsed_item %}
+    {% include "_vault_item_fields.html" %}
     <button type="submit">Save As New Vault Item</button>
   </form>
 </section>
+
+<template id="vault-bullet-template">
+  <div class="entry-card dynamic-row">
+    <div class="entry-header">
+      <strong>Bullet</strong>
+      <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+    </div>
+    <label>Text</label>
+    <input type="text" name="bullet___INDEX___text" placeholder="Built a ... that improved ..." />
+    <div class="grid-two">
+      <div>
+        <label>Situation</label>
+        <input type="text" name="bullet___INDEX___situation" />
+      </div>
+      <div>
+        <label>Task</label>
+        <input type="text" name="bullet___INDEX___task" />
+      </div>
+      <div>
+        <label>Action</label>
+        <input type="text" name="bullet___INDEX___action" />
+      </div>
+      <div>
+        <label>Outcome</label>
+        <input type="text" name="bullet___INDEX___outcome" />
+      </div>
+    </div>
+    <label>Impact</label>
+    <input type="text" name="bullet___INDEX___impact" />
+  </div>
+</template>
+
+<script>
+(function () {
+  function interpolate(template, index) {
+    return template.replace(/__INDEX__/g, String(index));
+  }
+
+  document.addEventListener('click', function (event) {
+    const addBulletButton = event.target.closest('[data-add-vault-bullet]');
+    if (addBulletButton) {
+      const editor = addBulletButton.closest('[data-bullet-editor]');
+      if (!editor) {
+        return;
+      }
+      const list = editor.querySelector('[data-bullet-list]');
+      const template = document.getElementById('vault-bullet-template');
+      if (!list || !template) {
+        return;
+      }
+      const next = Number(list.dataset.nextIndex || '0');
+      list.insertAdjacentHTML('beforeend', interpolate(template.innerHTML, next));
+      list.dataset.nextIndex = String(next + 1);
+      return;
+    }
+
+    const removeButton = event.target.closest('[data-remove-row]');
+    if (removeButton) {
+      const row = removeButton.closest('.dynamic-row, .entry-card');
+      if (row) {
+        row.remove();
+      }
+    }
+  });
+})();
+</script>
 {% endif %}
 {% endblock %}
