@@ -1,0 +1,115 @@
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Optional
+
+from jinja2 import Environment, FileSystemLoader
+
+from app.models import CanonicalResume
+from app.utils import latex_escape
+
+
+class LatexRenderError(RuntimeError):
+    pass
+
+
+class LatexService:
+    def __init__(self, templates_dir: Path) -> None:
+        self.env = Environment(
+            loader=FileSystemLoader(str(templates_dir)),
+            autoescape=False,
+            trim_blocks=True,
+            lstrip_blocks=True,
+        )
+        self.env.filters['latex_escape'] = latex_escape
+
+    def render_resume(self, resume: CanonicalResume, output_dir: Path, template_name: str = 'resume.tex.j2') -> Path:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        template = self.env.get_template(template_name)
+        tex_content = template.render(resume=resume)
+        tex_path = output_dir / 'resume.tex'
+        tex_path.write_text(tex_content, encoding='utf-8')
+        return tex_path
+
+    def compile_resume(self, output_dir: Path, mock_compile: bool = False) -> Path:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        tex_path = output_dir / 'resume.tex'
+        pdf_path = output_dir / 'resume.pdf'
+
+        if mock_compile or os.getenv('RESUME_MOCK_COMPILE') == '1':
+            pdf_path.write_bytes(b'%PDF-1.4\n% mock pdf\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n')
+            return pdf_path
+
+        latexmk = shutil.which('latexmk')
+        if not latexmk:
+            raise LatexRenderError('latexmk is not installed or not on PATH.')
+
+        command = [
+            latexmk,
+            '-pdf',
+            '-interaction=nonstopmode',
+            '-halt-on-error',
+            '-file-line-error',
+            str(tex_path.name),
+        ]
+
+        result = subprocess.run(
+            command,
+            cwd=output_dir,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            log_excerpt = _extract_latex_error_excerpt(output_dir / 'resume.log')
+            process_excerpt = (result.stderr or result.stdout)[-2000:]
+            details = log_excerpt or process_excerpt
+            raise LatexRenderError(f'LaTeX compile failed:\n{details}')
+
+        if not pdf_path.exists():
+            raise LatexRenderError('LaTeX compile did not produce resume.pdf')
+        return pdf_path
+
+    def count_pdf_pages(self, pdf_path: Path) -> int:
+        if not pdf_path.exists():
+            return 0
+        try:
+            import pdfplumber
+        except Exception:
+            return 1
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                return len(pdf.pages)
+        except Exception:
+            return 1
+
+
+def _extract_latex_error_excerpt(log_path: Path) -> str:
+    if not log_path.exists():
+        return ''
+
+    lines = log_path.read_text(encoding='utf-8', errors='ignore').splitlines()
+    matches = []
+    error_patterns = [
+        re.compile(r'^!'),
+        re.compile(r'LaTeX Error'),
+        re.compile(r'Undefined control sequence'),
+        re.compile(r'Misplaced alignment tab character'),
+        re.compile(r'Fatal error'),
+    ]
+
+    for index, line in enumerate(lines):
+        if any(pattern.search(line) for pattern in error_patterns):
+            start = max(0, index - 2)
+            end = min(len(lines), index + 4)
+            excerpt = '\n'.join(lines[start:end])
+            matches.append(excerpt)
+
+    if matches:
+        return '\n---\n'.join(matches[-3:])
+
+    return '\n'.join(lines[-60:])

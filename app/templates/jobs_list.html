@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Jobs</h2>
+  <p><a href="/jobs/new">Ingest New Job</a></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Job ID</th>
+        <th>Title</th>
+        <th>Company</th>
+        <th>URL</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for job in jobs %}
+      <tr>
+        <td><code>{{ job.job_id }}</code></td>
+        <td>{{ job.title or '-' }}</td>
+        <td>{{ job.company or '-' }}</td>
+        <td>{% if job.url %}<a href="{{ job.url }}" target="_blank" rel="noreferrer">source</a>{% else %}-{% endif %}</td>
+        <td><a href="/jobs/{{ job.job_id }}">Open</a></td>
+      </tr>
+      {% endfor %}
+      {% if not jobs %}
+      <tr><td colspan="5">No jobs ingested yet.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

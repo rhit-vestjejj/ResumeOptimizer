@@ -1,0 +1,23 @@
+type: project
+title: "Real-Time Fraud Detection System \u2013 Vector Similarity + Feature Store\
+  \ Pipeline"
+dates:
+  start: Nov 2025
+  end: Dec 2025
+tags:
+- "Real-Time Fraud Detection System \u2013 Vector Similarity + Feature Store Pipeline"
+- section:projects
+tech:
+- FastAPI
+- Redis
+- Postgres/pgvector
+- XGBoost
+- Streamlit
+bullets:
+- text: Built a real-time fraud scoring pipeline over 1.3M+ transactions using Redis
+    behavioral state + pgvector similarity features for low-latency inference.
+- text: Trained leakage-safe XGBoost models on ~0.6% fraud data, achieving 0.99 ROC-AUC,
+    0.67 PR-AUC, and 99% fraud-above-legit ranking quality.
+links: []
+source_artifacts:
+- base_resume:project:0

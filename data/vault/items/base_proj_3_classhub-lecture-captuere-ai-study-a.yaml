@@ -1,0 +1,32 @@
+type: project
+title: "ClassHub \u2013 Lecture Captuere + AI Study Assistant"
+dates:
+  start: Jan 2026
+  end: Feb 2026
+tags:
+- "ClassHub \u2013 Lecture Captuere + AI Study Assistant"
+- section:projects
+tech:
+- FastAPI
+- Python
+- faster-whisper
+- OpenAI API/Batch
+- JavaScript
+- Linux
+- systemd
+- Tailscale
+- Caddy
+- Obsidian
+- Notability
+bullets:
+- text: 'Architected a 17-route ML/AI system for long-form lecture processing across
+    6 courses: configurable local `faster-whisper` or OpenAI STT, `ffmpeg` chunked
+    transcription (15-minute segments), async OpenAI Batch summarization/task extraction/chat,
+    and live processing-state APIs/UI; reliably handles 50+ minute recordings.'
+- text: Built Notability-to-Obsidian integration that auto-ingests backup notes into
+    class/date lecture folders with deep links and audio attachments, using conflict-safe/idempotent
+    sync plus 4 systemd timers; added cost guardrails (per-lecture processing lock
+    + batch dedupe) that cut duplicate pending requests from 10 to 2.
+links: []
+source_artifacts:
+- base_resume:project:3

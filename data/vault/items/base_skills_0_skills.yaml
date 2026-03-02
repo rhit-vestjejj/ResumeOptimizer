@@ -1,0 +1,21 @@
+type: skillset
+title: Core Skills
+tags:
+- skills
+tech: []
+bullets:
+- text: 'Programming Languages: Python, Java, SQL, JavaScript, HTML/CSS'
+- text: 'ML/AI: scikit-learn, XGBoost, PyTorch, PyTorch Geometric, TensorFlow, OpenAI
+    API (Whisper, Chat Completions, Batch), feature engineering, imbalanced-learning
+    evaluation (ROC-AUC/PR-AUC), RMSE-based regression'
+- text: 'Frameworks & Libraries: FastAPI, Flask, React, Node.js, Streamlit, Pandas,
+    NumPy, Matplotlib'
+- text: 'Databases & Storage: PostgreSQL (pgvector), Redis, MySQL, SQLite, MongoDB,
+    Cassandra, Neo4j'
+- text: 'Data & Streaming: Apache Kafka, ZooKeeper'
+- text: 'Tools & DevOps: Docker, Git, GitHub, Linux, REST APIs, Tailscale, Caddy,
+    VS Code'
+- text: 'Languages: English (Fluent), Dutch (Fluent)'
+links: []
+source_artifacts:
+- base_resume:skills:0

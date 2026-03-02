@@ -1,0 +1,25 @@
+type: project
+title: "Jarvis \u2013 Voice Driven Productivity Agent"
+dates:
+  start: Feb 2026
+  end: Feb 2026
+tags:
+- "Jarvis \u2013 Voice Driven Productivity Agent"
+- section:projects
+tech:
+- FastAPI
+- Faster-Whisper
+- OpenClaw/LLM
+- Google Calendar API
+- Gmail API
+- Python
+- Tailscale
+- Caddy
+bullets:
+- text: Shipped a voice-first assistant with 11+ backend endpoints that transcribes
+    commands and routes deterministic JSON actions for task/planning workflows.
+- text: Integrated 2 Google APIs with 5+ production automations (event create/move/delete,
+    unread triage, draft replies) and deployed via secure remote infrastructure.
+links: []
+source_artifacts:
+- base_resume:project:4

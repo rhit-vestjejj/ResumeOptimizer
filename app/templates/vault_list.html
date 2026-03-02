@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Experience Vault</h2>
+  <p><a href="/vault/new">Create Vault Item</a></p>
+  <p><a href="/vault/ingest">Ingest From Notes/File</a></p>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Type</th>
+        <th>Title</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item_id, item in items %}
+      <tr>
+        <td><code>{{ item_id }}</code></td>
+        <td>{{ item.type.value }}</td>
+        <td>{{ item.title }}</td>
+        <td>
+          <div class="action-row">
+            <a class="button-link" href="/vault/{{ item_id }}">Edit</a>
+            <form class="inline-form" method="post" action="/vault/{{ item_id }}/delete" onsubmit="return confirm('Delete this vault item?');">
+              <button class="btn-danger btn-small" type="submit">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not items %}
+      <tr><td colspan="4">No vault items yet.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

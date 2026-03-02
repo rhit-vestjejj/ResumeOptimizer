@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>{% if item_id %}Edit{% else %}Create{% endif %} Vault Item</h2>
+  <p class="muted">Tip: add tag <code>section:minor_projects</code> to place a project in the Minor Projects section.</p>
+  {% if error %}
+    <p class="warn-text">{{ error }}</p>
+  {% endif %}
+  <form method="post" action="{% if item_id %}/vault/{{ item_id }}{% else %}/vault/new{% endif %}">
+    <textarea name="item_yaml" rows="28" required>{{ item_yaml }}</textarea>
+    <button type="submit">Save Vault Item</button>
+  </form>
+  {% if item_id %}
+  <form method="post" action="/vault/{{ item_id }}/delete" onsubmit="return confirm('Delete this vault item?');">
+    <button class="btn-danger" type="submit">Delete Vault Item</button>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

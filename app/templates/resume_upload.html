@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Upload Resume (PDF/DOCX)</h2>
+  <form method="post" action="/resume/upload" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".pdf,.docx" required />
+    <button type="submit">Extract + Canonicalize</button>
+  </form>
+  {% if error %}
+    <p class="warn-text">{{ error }}</p>
+  {% endif %}
+  {% if warnings %}
+    <ul>
+      {% for warning in warnings %}
+      <li>{{ warning }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+
+{% if raw_text %}
+<section class="card">
+  <h2>Extracted Text Preview</h2>
+  <pre class="scroll-box">{{ raw_text }}</pre>
+</section>
+{% endif %}
+
+{% if canonical_yaml %}
+<section class="card">
+  <h2>Canonical Resume YAML (Source of Truth)</h2>
+  <p class="muted">Project entries support <code>section: projects</code> or <code>section: minor_projects</code>.</p>
+  <form method="post" action="/resume/save">
+    <textarea name="canonical_yaml" rows="28" required>{{ canonical_yaml }}</textarea>
+    <button type="submit">Save Canonical Resume</button>
+  </form>
+  <form method="post" action="/resume/sync-vault">
+    <button type="submit">Resync Base Resume Into Vault</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

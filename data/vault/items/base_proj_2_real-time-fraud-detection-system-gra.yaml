@@ -1,0 +1,25 @@
+type: project
+title: "Real-Time Fraud Detection System \u2013 Graph-Based AI Pipeline"
+dates:
+  start: Aug 2025
+  end: Nov 2025
+tags:
+- "Real-Time Fraud Detection System \u2013 Graph-Based AI Pipeline"
+- section:projects
+tech:
+- Neo4j
+- Cassandra
+- MongoDB
+- Kafka
+- Docker
+- PyTorch Geometric
+- XGBoost
+- React
+bullets:
+- text: Built a streaming fraud system across Kafka + 3 databases, processing ~1M
+    transactions with graph + feature fusion.
+- text: Developed a GNN + XGBoost hybrid reaching 92% live-inference accuracy and
+    deployed Dockerized millisecond-path scoring for React dashboard visualization.
+links: []
+source_artifacts:
+- base_resume:project:2

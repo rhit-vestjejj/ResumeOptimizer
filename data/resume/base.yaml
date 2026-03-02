@@ -1,0 +1,212 @@
+identity:
+  name: Jean-Paul J. Vestjens
+  email: vestjejj@rose-hulman.edu
+  phone: "(314) 915\u20111969"
+  location: Terre Haute, IN
+  links:
+  - https://www.linkedin.com/in/vestjejj
+  - "portfolio\u2011a9b22.web.app"
+summary: ''
+education:
+- school: "Rose\u2011Hulman Institute of Technology"
+  degree: Bachelor of Science
+  major: Software Engineering and Data Science and AI
+  minors:
+  - Economics
+  gpa: ''
+  dates:
+    start: ''
+    end: May 2027
+  coursework:
+  - Machine Learning
+  - Data Mining
+  - Engineering Statistics
+  - Transformers
+  - Generative AI
+  - Intro to Probability w/ Applications to Statistics
+  - Advanced Database Systems
+  - Intro to Database Systems
+  - Data Structures & Algorithm Analysis
+experience:
+- company: Clayco
+  title: Service Desk Intern
+  location: St. Louis, MO
+  dates:
+    start: May 2025
+    end: Aug 2025
+  bullets:
+  - Supported 100+ enterprise applications, resolving 40+ technical support tickets
+    per week via phone and remote tools.
+  - Built Power Automate workflows to streamline help-desk processes and manage OOO,
+    WFH, FLEX, and PTO requests, cutting resolution time.
+  - "Collaborated with cross\u2011functional teams to document procedures and improve\
+    \ user satisfaction, technologies and security principles."
+projects:
+- name: "Real-Time Fraud Detection System \u2013 Vector Similarity + Feature Store\
+    \ Pipeline"
+  link: ''
+  dates:
+    start: Nov 2025
+    end: Dec 2025
+  tech:
+  - FastAPI
+  - Redis
+  - Postgres/pgvector
+  - XGBoost
+  - Streamlit
+  bullets:
+  - Built a real-time fraud scoring pipeline over 1.3M+ transactions using Redis behavioral
+    state + pgvector similarity features for low-latency inference.
+  - Trained leakage-safe XGBoost models on ~0.6% fraud data, achieving 0.99 ROC-AUC,
+    0.67 PR-AUC, and 99% fraud-above-legit ranking quality.
+  section: projects
+- name: NCAA Tournament Selection & Seeding ML Pipeline (Kaggle Competition)
+  link: ''
+  dates:
+    start: Jan 2026
+    end: March 2026
+  tech:
+  - Pandas
+  - NumPy
+  - scikit-learn
+  - XGBoost
+  - Kaggle
+  - Sports-Reference
+  - NCAA APIs
+  - ELO
+  bullets:
+  - Designed a 2-stage pipeline (at-large selection + seeding) matching committee
+    workflow, reaching ~0.66 RMSE on held-out test data.
+  - Engineered features across 5 seasons and trained a 4-model ensemble stack (Ridge,
+    XGBoost, ExtraTrees, RandomForest) with leave-one-season-out validation.
+  section: projects
+- name: "Real-Time Fraud Detection System \u2013 Graph-Based AI Pipeline"
+  link: ''
+  dates:
+    start: Aug 2025
+    end: Nov 2025
+  tech:
+  - Neo4j
+  - Cassandra
+  - MongoDB
+  - Kafka
+  - Docker
+  - PyTorch Geometric
+  - XGBoost
+  - React
+  bullets:
+  - Built a streaming fraud system across Kafka + 3 databases, processing ~1M transactions
+    with graph + feature fusion.
+  - Developed a GNN + XGBoost hybrid reaching 92% live-inference accuracy and deployed
+    Dockerized millisecond-path scoring for React dashboard visualization.
+  section: projects
+- name: "ClassHub \u2013 Lecture Captuere + AI Study Assistant"
+  link: ''
+  dates:
+    start: Jan 2026
+    end: Feb 2026
+  tech:
+  - FastAPI
+  - Python
+  - faster-whisper
+  - OpenAI API/Batch
+  - JavaScript
+  - Linux
+  - systemd
+  - Tailscale
+  - Caddy
+  - Obsidian
+  - Notability
+  bullets:
+  - 'Architected a 17-route ML/AI system for long-form lecture processing across 6
+    courses: configurable local `faster-whisper` or OpenAI STT, `ffmpeg` chunked transcription
+    (15-minute segments), async OpenAI Batch summarization/task extraction/chat, and
+    live processing-state APIs/UI; reliably handles 50+ minute recordings.'
+  - Built Notability-to-Obsidian integration that auto-ingests backup notes into class/date
+    lecture folders with deep links and audio attachments, using conflict-safe/idempotent
+    sync plus 4 systemd timers; added cost guardrails (per-lecture processing lock
+    + batch dedupe) that cut duplicate pending requests from 10 to 2.
+  section: projects
+- name: "Jarvis \u2013 Voice Driven Productivity Agent"
+  link: ''
+  dates:
+    start: Feb 2026
+    end: Feb 2026
+  tech:
+  - FastAPI
+  - Faster-Whisper
+  - OpenClaw/LLM
+  - Google Calendar API
+  - Gmail API
+  - Python
+  - Tailscale
+  - Caddy
+  bullets:
+  - Shipped a voice-first assistant with 11+ backend endpoints that transcribes commands
+    and routes deterministic JSON actions for task/planning workflows.
+  - Integrated 2 Google APIs with 5+ production automations (event create/move/delete,
+    unread triage, draft replies) and deployed via secure remote infrastructure.
+  section: projects
+- name: Minor Projects
+  link: ''
+  dates:
+    start: ''
+    end: ''
+  tech:
+  - Python
+  bullets:
+  - Built machine learning models from first principles in Python, including Linear
+    & Logistic Regression, Neural Networks, Decision Trees, and Random Forests, implementing
+    optimization, backpropagation, and ensemble methods without ML libraries.
+  section: projects
+skills:
+  categories:
+    Programming Languages:
+    - Python
+    - Java
+    - SQL
+    - JavaScript
+    - HTML/CSS
+    ML/AI:
+    - scikit-learn
+    - XGBoost
+    - PyTorch
+    - PyTorch Geometric
+    - TensorFlow
+    - OpenAI API (Whisper, Chat Completions, Batch)
+    - feature engineering
+    - imbalanced-learning evaluation (ROC-AUC/PR-AUC)
+    - RMSE-based regression
+    Frameworks & Libraries:
+    - FastAPI
+    - Flask
+    - React
+    - Node.js
+    - Streamlit
+    - Pandas
+    - NumPy
+    - Matplotlib
+    Databases & Storage:
+    - PostgreSQL (pgvector)
+    - Redis
+    - MySQL
+    - SQLite
+    - MongoDB
+    - Cassandra
+    - Neo4j
+    Data & Streaming:
+    - Apache Kafka
+    - ZooKeeper
+    Tools & DevOps:
+    - Docker
+    - Git
+    - GitHub
+    - Linux
+    - REST APIs
+    - Tailscale
+    - Caddy
+    - VS Code
+    Languages:
+    - English (Fluent)
+    - Dutch (Fluent)
+awards: []

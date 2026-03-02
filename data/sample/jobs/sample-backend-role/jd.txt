@@ -1,0 +1,18 @@
+About the role
+We are hiring a Backend Software Engineer to build high-scale APIs and data processing services.
+
+Responsibilities
+- Design and implement backend services in Python.
+- Build and optimize PostgreSQL schemas and SQL queries.
+- Improve reliability, observability, and deployment workflows.
+- Collaborate with product and design teams to ship customer-facing features.
+
+Required qualifications
+- 2+ years of software engineering experience.
+- Strong Python and SQL skills.
+- Experience with FastAPI or Flask, and relational databases.
+- Familiarity with Docker and CI/CD tooling.
+
+Preferred
+- Experience with Redis or asynchronous workers.
+- Exposure to cloud infrastructure and distributed systems.

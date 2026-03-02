@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>ATS Audit Runner</h2>
+  <p class="muted">Runs mirror parsing, linting, canonical checks, JD matching, grounded patch proposals, and ATS-safe output rendering.</p>
+  <form method="post" action="/audit/run" enctype="multipart/form-data">
+    <label>Resume File (PDF / DOCX / TXT)</label>
+    <input type="file" name="resume_file" accept=".pdf,.docx,.txt" required />
+
+    <label>Use Existing Job (optional)</label>
+    <select name="job_id">
+      <option value="">None</option>
+      {% for job in jobs %}
+      <option value="{{ job.job_id }}" {% if selected_job_id == job.job_id %}selected{% endif %}>
+        {{ job.job_id }}{% if job.title %} - {{ job.title }}{% endif %}{% if job.company %} ({{ job.company }}){% endif %}
+      </option>
+      {% endfor %}
+    </select>
+
+    <label>Job Description Text (optional, overrides selected job)</label>
+    <textarea name="jd_text" rows="10">{{ jd_text }}</textarea>
+
+    <label>
+      <input type="checkbox" name="render_outputs" value="1" {% if run_render_outputs %}checked{% endif %} />
+      Render ATS outputs (DOCX, PDF, TXT) and bundle
+    </label>
+
+    <button type="submit">Run Audit</button>
+  </form>
+  {% if error %}
+    <p class="warn-text">{{ error }}</p>
+  {% endif %}
+</section>
+
+{% if result %}
+<section class="card">
+  <h2>Audit Summary</h2>
+  <p>Parse quality: <strong>{{ result.parse_quality.parse_quality if result.parse_quality else "-" }}</strong></p>
+  <p>Canonical counts:
+    education={{ result.canonical_counts.education }},
+    experience={{ result.canonical_counts.experience }},
+    projects={{ result.canonical_counts.projects }},
+    skill_categories={{ result.canonical_counts.skill_categories }},
+    certifications={{ result.canonical_counts.certifications }}
+  </p>
+  <p>Lint issues: {{ result.lint.issue_count if result.lint else 0 }} (max severity: {{ result.lint.max_severity if result.lint else "none" }})</p>
+  <p>Sensitive findings: {{ result.sensitive_data.count if result.sensitive_data else 0 }}</p>
+  <p>Timeline overlaps: {{ result.timeline_overlaps.count if result.timeline_overlaps else 0 }}</p>
+</section>
+
+{% if result.extraction_warnings %}
+<section class="card">
+  <h2>Extraction Warnings</h2>
+  <ul>
+    {% for warning in result.extraction_warnings %}
+      <li>{{ warning }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if result.lint and result.lint.issues %}
+<section class="card">
+  <h2>Lint Issues</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Code</th>
+        <th>Severity</th>
+        <th>Message</th>
+        <th>Recommendation</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for issue in result.lint.issues %}
+      <tr>
+        <td><code>{{ issue.code }}</code></td>
+        <td>{{ issue.severity }}</td>
+        <td>{{ issue.message }}</td>
+        <td>{{ issue.recommendation }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Validation</h2>
+  {% if result.contact_validation %}
+  <p>Email valid: {{ result.contact_validation.email_valid }}</p>
+  <p>Phone valid: {{ result.contact_validation.phone_valid }}</p>
+  <p>All contact fields valid: {{ result.contact_validation.all_valid }}</p>
+  {% endif %}
+  {% if result.timeline_durations %}
+  <p>Estimated experience years (min): {{ result.timeline_durations.total_experience_years_min }}</p>
+  <p>Estimated experience years (max): {{ result.timeline_durations.total_experience_years_max }}</p>
+  {% endif %}
+</section>
+
+{% if result.parsed_job %}
+<section class="card">
+  <h2>JD Requirements</h2>
+  <p>JD source: <code>{{ result.jd_source }}</code></p>
+  <p>Normalized title: {{ result.parsed_job.normalized_title or "-" }}</p>
+  <p>Years required: {{ result.parsed_job.years_required if result.parsed_job.years_required is not none else "-" }}</p>
+  <p>Required hard skills:
+    {% set req_hard = result.parsed_job.required.skills | map(attribute='canonical_id') | list %}
+    {{ req_hard | join(', ') if req_hard else '-' }}
+  </p>
+  <p>Required soft skills:
+    {% set req_soft = result.parsed_job.required.soft_skills | map(attribute='canonical_id') | list %}
+    {{ req_soft | join(', ') if req_soft else '-' }}
+  </p>
+  <p>Preferred hard skills:
+    {% set pref_hard = result.parsed_job.preferred.skills | map(attribute='canonical_id') | list %}
+    {{ pref_hard | join(', ') if pref_hard else '-' }}
+  </p>
+  <p>Preferred soft skills:
+    {% set pref_soft = result.parsed_job.preferred.soft_skills | map(attribute='canonical_id') | list %}
+    {{ pref_soft | join(', ') if pref_soft else '-' }}
+  </p>
+</section>
+{% endif %}
+
+{% if result.match %}
+<section class="card">
+  <h2>Match Score</h2>
+  <p>Overall score: <strong>{{ result.match.score.overall_score }}</strong></p>
+  <p>Subscores:
+    lexical={{ result.match.score.subscores.lexical_similarity }},
+    semantic={{ result.match.score.subscores.semantic_similarity }},
+    structured={{ result.match.score.subscores.structured_constraints }},
+    hard_skill_alignment={{ result.match.score.subscores.hard_skill_alignment }},
+    soft_skill_alignment={{ result.match.score.subscores.soft_skill_alignment }}
+  </p>
+  <h3>Top Drivers</h3>
+  <ul>
+    {% for driver in result.match.score.top_drivers %}
+      <li><code>{{ driver.type }}</code>: {{ driver.value }}</li>
+    {% endfor %}
+    {% if not result.match.score.top_drivers %}
+      <li>No positive drivers identified.</li>
+    {% endif %}
+  </ul>
+  <h3>Ranked Gaps</h3>
+  <ul>
+    {% for gap in result.match.score.ranked_gaps %}
+      <li>#{{ gap.rank }} <code>{{ gap.type }}</code>: {{ gap.value }} ({{ gap.severity }})</li>
+    {% endfor %}
+    {% if not result.match.score.ranked_gaps %}
+      <li>No gaps identified.</li>
+    {% endif %}
+  </ul>
+</section>
+{% endif %}
+
+{% if result.patches %}
+<section class="card">
+  <h2>Patch Proposals</h2>
+  <ul>
+    {% for patch in result.patches.patches %}
+      <li><code>{{ patch.status }}</code> | <code>{{ patch.op }}</code> | {{ patch.reason }}</li>
+    {% endfor %}
+    {% if not result.patches.patches %}
+      <li>No patches generated.</li>
+    {% endif %}
+  </ul>
+</section>
+{% endif %}
+
+{% if result.render_artifacts %}
+<section class="card">
+  <h2>Rendered Artifacts</h2>
+  {% if result.render_artifacts.error %}
+    <p class="warn-text">{{ result.render_artifacts.error }}</p>
+  {% else %}
+    {% if result.render_artifacts.ats_pdf_exists %}
+      <p><a href="/outputs/{{ result.render_artifacts.job_id }}/{{ result.render_artifacts.timestamp }}/ats_resume.pdf">Download ATS PDF</a></p>
+    {% endif %}
+    {% if result.render_artifacts.ats_docx_exists %}
+      <p><a href="/outputs/{{ result.render_artifacts.job_id }}/{{ result.render_artifacts.timestamp }}/ats_resume.docx">Download ATS DOCX</a></p>
+    {% endif %}
+    {% if result.render_artifacts.ats_txt_exists %}
+      <p><a href="/outputs/{{ result.render_artifacts.job_id }}/{{ result.render_artifacts.timestamp }}/ats_resume.txt">Download ATS TXT</a></p>
+    {% endif %}
+    {% if result.render_artifacts.bundle_exists %}
+      <p><a href="/api/export_bundle/{{ result.render_artifacts.job_id }}/{{ result.render_artifacts.timestamp }}">Download Bundle (ZIP)</a></p>
+    {% endif %}
+    <p>PDF text-layer check: {{ result.render_artifacts.pdf_text_layer.ok }} (chars={{ result.render_artifacts.pdf_text_layer.extractable_chars }})</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Extracted Text Preview</h2>
+  <pre class="scroll-box">{{ result.raw_text_preview }}</pre>
+</section>
+{% endif %}
+{% endblock %}

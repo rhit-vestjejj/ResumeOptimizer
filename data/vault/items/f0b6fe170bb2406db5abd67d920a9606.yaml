@@ -1,0 +1,62 @@
+type: project
+title: DegreeGPS Multi-Agent Academic Advisor
+dates:
+  start: Feb 2026
+  end: Feb 2026
+tags:
+- academic advising
+- multi-agent system
+- schedule validation
+- asynchronous processing
+tech:
+- Python
+- Flask
+- JavaScript
+- HTML/CSS
+- IBM watsonx Orchestrate APIs
+- OpenAPI 3.0
+- PlantUML
+- Markdown/TXT
+bullets:
+- text: Built a Flask orchestration gateway with 5 endpoints to submit and poll agent
+    runs, managing pending-run recovery states with frontend polling bounded at 900
+    ms intervals and a 210 s timeout cap, achieving p50 and p95 end-to-end response
+    latencies.
+  situation: Needed to route student questions asynchronously to IBM watsonx Orchestrate
+    runs and handle run lifecycle states.
+  task: Develop a backend gateway to manage agent run submissions, polling, and recovery
+    states with efficient response times.
+  action: Implemented Flask backend with endpoints /, /smoke, /chat, /chat/poll, and
+    /validate_schedule; designed frontend polling strategy with timeout and interval
+    limits.
+  outcome: Enabled reliable asynchronous processing with measured p50 and p95 latencies
+    for factual queries.
+  impact: Improved user experience by providing timely and reliable academic advising
+    responses.
+- text: Engineered deterministic schedule validation logic enforcing course existence,
+    prerequisite compliance, and credit-cap violations, returning requirement coverage
+    results and achieving high throughput in validation requests.
+  situation: Needed to validate student schedule proposals before approval to ensure
+    academic policy compliance.
+  task: Create a validation API to check schedules against catalog and requirements
+    with performance metrics.
+  action: Developed validation logic covering three violation classes and policy warnings;
+    measured throughput with 500 requests achieving high requests per second.
+  outcome: Provided automated, reliable schedule validation supporting downstream
+    approval gating.
+  impact: Reduced manual validation effort and increased accuracy in academic planning.
+- text: Integrated a local advising corpus of 42 data artifacts including 22 course
+    documents, a 35,421-line merged catalog, and 18 structured opportunity entries;
+    implemented structured JSON response parsing to auto-render semester plans and
+    opportunity status in the UI.
+  situation: Needed to maintain a substantial local knowledge base for accurate advising
+    and planning UI updates.
+  task: Incorporate extensive course and opportunity data and parse assistant payloads
+    for UI rendering.
+  action: Integrated data artifacts and implemented parsing of schedule-json and opportunities-json
+    structured responses.
+  outcome: Enabled automatic UI updates reflecting accurate semester plans and opportunity
+    statuses.
+  impact: Enhanced advising accuracy and user interface responsiveness.
+links: []
+source_artifacts: []

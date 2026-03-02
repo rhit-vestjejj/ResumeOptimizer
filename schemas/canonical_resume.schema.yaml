@@ -1,0 +1,110 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: CanonicalResume
+type: object
+additionalProperties: false
+required:
+  - schema_version
+  - identity
+  - education
+  - experience
+  - projects
+  - skills
+properties:
+  schema_version:
+    type: string
+  identity:
+    type: object
+    additionalProperties: false
+    required: [name, email, phone, location, links]
+    properties:
+      name: { type: string }
+      email: { type: string }
+      phone: { type: string }
+      location: { type: string }
+      links:
+        type: array
+        items: { type: string }
+  summary:
+    type: [string, "null"]
+  education:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [school, degree, major, minors, gpa, dates, coursework]
+      properties:
+        school: { type: string }
+        degree: { type: string }
+        major: { type: string }
+        minors:
+          type: array
+          items: { type: string }
+        gpa: { type: string }
+        dates:
+          type: object
+          additionalProperties: false
+          properties:
+            start: { type: [string, "null"] }
+            end: { type: [string, "null"] }
+        coursework:
+          type: array
+          items: { type: string }
+  experience:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [company, title, location, dates, bullets]
+      properties:
+        company: { type: string }
+        title: { type: string }
+        location: { type: string }
+        dates:
+          type: object
+          additionalProperties: false
+          properties:
+            start: { type: [string, "null"] }
+            end: { type: [string, "null"] }
+        bullets:
+          type: array
+          items: { type: string }
+  projects:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [name, tech, bullets]
+      properties:
+        name: { type: string }
+        link: { type: [string, "null"] }
+        section:
+          type: string
+          enum: [projects, minor_projects]
+        dates:
+          type: [object, "null"]
+          additionalProperties: false
+          properties:
+            start: { type: [string, "null"] }
+            end: { type: [string, "null"] }
+        tech:
+          type: array
+          items: { type: string }
+        bullets:
+          type: array
+          items: { type: string }
+  skills:
+    type: object
+    additionalProperties: false
+    required: [categories]
+    properties:
+      categories:
+        type: object
+        additionalProperties:
+          type: array
+          items: { type: string }
+  certifications:
+    type: array
+    items: { type: string }
+  awards:
+    type: [array, "null"]
+    items: { type: string }

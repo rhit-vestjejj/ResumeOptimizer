@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card-grid">
+  <article class="card">
+    <h2>Base Resume</h2>
+    <p>Status: {% if base_resume_exists %}<strong>Loaded</strong>{% else %}<strong>Missing</strong>{% endif %}</p>
+    <a href="/resume/upload">Upload / Edit Canonical YAML</a>
+  </article>
+  <article class="card">
+    <h2>Experience Vault</h2>
+    <p>Total items: <strong>{{ vault_count }}</strong></p>
+    <a href="/vault">Manage Vault</a>
+  </article>
+  <article class="card">
+    <h2>Job Postings</h2>
+    <p>Total jobs: <strong>{{ job_count }}</strong></p>
+    <a href="/jobs/new">Ingest New Job</a>
+  </article>
+</section>
+<section class="card">
+  <h2>Tailoring Status</h2>
+  {% if llm_available %}
+    <p>LLM enabled. Tailoring routes are active.</p>
+  {% else %}
+    <p class="warn-text">LLM disabled. Set <code>OPENAI_API_KEY</code> to tailor resumes.</p>
+  {% endif %}
+  {% if token_header %}
+    <p>POST token header: <code>{{ token_header }}</code> (enforced only when <code>RESUME_APP_TOKEN</code> is set).</p>
+  {% endif %}
+</section>
+{% endblock %}

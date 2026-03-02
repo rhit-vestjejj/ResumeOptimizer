@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Local Resume Tailor</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <h1>Local Resume Tailor</h1>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/resume/upload">Resume</a>
+      <a href="/vault">Vault</a>
+      <a href="/jobs">Jobs</a>
+      <a href="/audit">Audit</a>
+    </nav>
+  </header>
+  <main>
+    {% if llm_init_error %}
+      <div class="notice warning">LLM init error: {{ llm_init_error }}</div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

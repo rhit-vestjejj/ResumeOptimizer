@@ -1,0 +1,86 @@
+identity:
+  name: Alex Morgan
+  email: alex.morgan@example.com
+  phone: "+1-555-010-1234"
+  location: Austin, TX
+  links:
+    - https://www.linkedin.com/in/alexmorgan
+    - https://github.com/alexmorgan
+summary: Software engineer focused on backend systems, data pipelines, and reliable product delivery.
+education:
+  - school: University of Texas at Austin
+    degree: Bachelor of Science
+    major: Computer Science
+    minors:
+      - Mathematics
+    gpa: "3.82/4.0"
+    dates:
+      start: Aug 2019
+      end: May 2023
+    coursework:
+      - Distributed Systems
+      - Operating Systems
+      - Database Systems
+      - Machine Learning
+experience:
+  - company: BlueRiver Analytics
+    title: Software Engineer
+    location: Austin, TX
+    dates:
+      start: Jul 2023
+      end: Present
+    bullets:
+      - Built Python and FastAPI services for customer data ingestion and transformations.
+      - Designed PostgreSQL schemas and background workers for near real-time reporting.
+      - Partnered with product managers to ship roadmap features across three quarterly releases.
+  - company: State Data Lab
+    title: Data Engineering Intern
+    location: Austin, TX
+    dates:
+      start: Jun 2022
+      end: Aug 2022
+    bullets:
+      - Implemented ETL jobs in Python and SQL to process public transit datasets.
+      - Added data quality checks that reduced broken daily loads by 40%.
+projects:
+  - name: Fleet Health Monitor
+    link: https://github.com/alexmorgan/fleet-health
+    dates:
+      start: Jan 2024
+      end: Apr 2024
+    tech:
+      - Python
+      - FastAPI
+      - PostgreSQL
+      - Docker
+    bullets:
+      - Developed monitoring APIs for fleet telemetry and alert thresholds.
+      - Created CI checks and containerized deployment workflow.
+  - name: Campus Event Recommender
+    dates:
+      start: Sep 2022
+      end: Dec 2022
+    tech:
+      - Python
+      - Pandas
+      - scikit-learn
+    bullets:
+      - Trained ranking models on participation history and event metadata.
+      - Evaluated precision and recall tradeoffs for top-N recommendations.
+skills:
+  categories:
+    Languages:
+      - Python
+      - SQL
+      - Java
+    Backend:
+      - FastAPI
+      - Flask
+      - PostgreSQL
+      - Redis
+    Tools:
+      - Docker
+      - GitHub Actions
+      - Linux
+awards:
+  - Dean's List, 2021-2023

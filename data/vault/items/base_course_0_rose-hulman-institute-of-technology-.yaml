@@ -1,0 +1,25 @@
+type: coursework
+title: "Rose\u2011Hulman Institute of Technology Coursework"
+dates:
+  start: ''
+  end: May 2027
+tags:
+- "Rose\u2011Hulman Institute of Technology"
+- Software Engineering and Data Science and AI
+tech:
+- Machine Learning
+- Data Mining
+- Engineering Statistics
+- Transformers
+- Generative AI
+- Intro to Probability w/ Applications to Statistics
+- Advanced Database Systems
+- Intro to Database Systems
+- Data Structures & Algorithm Analysis
+bullets:
+- text: 'Coursework: Machine Learning, Data Mining, Engineering Statistics, Transformers,
+    Generative AI, Intro to Probability w/ Applications to Statistics, Advanced Database
+    Systems, Intro to Database Systems, Data Structures & Algorithm Analysis'
+links: []
+source_artifacts:
+- base_resume:education:0:coursework

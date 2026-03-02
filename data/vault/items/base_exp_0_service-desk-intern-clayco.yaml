@@ -1,0 +1,32 @@
+type: job
+title: Service Desk Intern
+dates:
+  start: May 2025
+  end: Aug 2025
+tags:
+- role:Service Desk Intern
+- company:Clayco
+- location:St. Louis, MO
+- Service Desk Intern
+- Clayco
+- St. Louis, MO
+tech:
+- supported
+- built
+- power
+- automate
+- ooo
+- wfh
+- flex
+- pto
+- collaborated
+bullets:
+- text: Supported 100+ enterprise applications, resolving 40+ technical support tickets
+    per week via phone and remote tools.
+- text: Built Power Automate workflows to streamline help-desk processes and manage
+    OOO, WFH, FLEX, and PTO requests, cutting resolution time.
+- text: "Collaborated with cross\u2011functional teams to document procedures and\
+    \ improve user satisfaction, technologies and security principles."
+links: []
+source_artifacts:
+- base_resume:experience:0

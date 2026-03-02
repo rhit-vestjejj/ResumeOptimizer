@@ -1,0 +1,25 @@
+type: project
+title: NCAA Tournament Selection & Seeding ML Pipeline (Kaggle Competition)
+dates:
+  start: Jan 2026
+  end: March 2026
+tags:
+- NCAA Tournament Selection & Seeding ML Pipeline (Kaggle Competition)
+- section:projects
+tech:
+- Pandas
+- NumPy
+- scikit-learn
+- XGBoost
+- Kaggle
+- Sports-Reference
+- NCAA APIs
+- ELO
+bullets:
+- text: Designed a 2-stage pipeline (at-large selection + seeding) matching committee
+    workflow, reaching ~0.66 RMSE on held-out test data.
+- text: Engineered features across 5 seasons and trained a 4-model ensemble stack
+    (Ridge, XGBoost, ExtraTrees, RandomForest) with leave-one-season-out validation.
+links: []
+source_artifacts:
+- base_resume:project:1

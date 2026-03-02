@@ -1,0 +1,20 @@
+type: project
+title: Payments Reconciliation Tool
+dates:
+  start: Mar 2024
+  end: Jun 2024
+tags:
+  - reconciliation
+  - finance
+  - backend
+tech:
+  - Python
+  - PostgreSQL
+  - Docker
+bullets:
+  - text: Built reconciliation jobs to match settlement files against transaction events.
+  - text: Added audit logging and retry controls for idempotent processing.
+links:
+  - https://github.com/alexmorgan/payments-recon
+source_artifacts:
+  - data/sample/artifacts/payments_recon_notes.md

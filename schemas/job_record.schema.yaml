@@ -1,0 +1,11 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: JobRecord
+type: object
+additionalProperties: false
+required: [job_id, scraped_at]
+properties:
+  job_id: { type: string }
+  url: { type: [string, "null"] }
+  title: { type: [string, "null"] }
+  company: { type: [string, "null"] }
+  scraped_at: { type: string }

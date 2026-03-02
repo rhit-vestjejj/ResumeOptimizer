@@ -1,0 +1,51 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: VaultItem
+type: object
+additionalProperties: false
+required:
+  - type
+  - title
+  - tags
+  - tech
+  - bullets
+  - links
+  - source_artifacts
+properties:
+  type:
+    type: string
+    enum: [project, job, club, coursework, award, skillset, other]
+  title:
+    type: string
+  dates:
+    type: [object, "null"]
+    additionalProperties: false
+    properties:
+      start: { type: [string, "null"] }
+      end: { type: [string, "null"] }
+  tags:
+    type: array
+    items: { type: string }
+  tech:
+    type: array
+    items: { type: string }
+  bullets:
+    type: array
+    items:
+      oneOf:
+        - type: string
+        - type: object
+          additionalProperties: false
+          required: [text]
+          properties:
+            text: { type: string }
+            situation: { type: [string, "null"] }
+            task: { type: [string, "null"] }
+            action: { type: [string, "null"] }
+            outcome: { type: [string, "null"] }
+            impact: { type: [string, "null"] }
+  links:
+    type: array
+    items: { type: string }
+  source_artifacts:
+    type: array
+    items: { type: string }

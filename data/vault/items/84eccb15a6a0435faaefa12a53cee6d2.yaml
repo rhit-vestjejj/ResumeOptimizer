@@ -1,0 +1,46 @@
+type: project
+title: "ATS Resume Optimization Platform \u2013 Local-First Tailoring Engine"
+dates:
+  start: Feb 2026
+  end: Present
+tags: []
+tech:
+- Python
+- FastAPI
+- Jinja2
+- Playwright
+- pdfplumber
+- python-docx
+- LaTeX/latexmk
+- YAML
+- OpenAI API
+bullets:
+- text: Built a local-only resume optimization web app with 37 FastAPI routes (11
+    ATS APIs), ingesting PDF/DOCX resumes and job descriptions into a canonical YAML
+    model and filesystem-backed vault/jobs/outputs workflow.
+  situation: Need for a resume optimization tool that operates locally and supports
+    multiple resume and job description formats.
+  task: Develop a web app to process and optimize resumes for ATS compatibility.
+  action: Created a web app with multiple FastAPI routes to ingest and convert resumes
+    and job descriptions into a canonical YAML model and managed the workflow with
+    a filesystem-backed vault.
+  outcome: A functional local-only resume optimization platform capable of handling
+    various input formats and managing outputs effectively.
+  impact: Improved resume tailoring efficiency and ATS compatibility through a local-first
+    approach.
+- text: Implemented a deterministic ATS pipeline with 2-parser mirror parsing (+ optional
+    LLM parser), 7-rule ATS linting, explainable hard/soft-skill match scoring, and
+    3 ATS-safe render outputs (PDF/DOCX/TXT) with a target-score optimization loop
+    capped at 5 passes.
+  situation: Need to ensure resumes are optimized for ATS systems with explainable
+    scoring and multiple output formats.
+  task: Design and implement an ATS pipeline with parsing, linting, scoring, and output
+    rendering.
+  action: Developed a deterministic pipeline using multiple parsers, linting rules,
+    skill match scoring, and generated ATS-safe outputs with an optimization loop.
+  outcome: An explainable and optimized resume tailoring process producing multiple
+    ATS-compatible output formats.
+  impact: Enhanced resume quality and ATS pass rates through systematic optimization
+    and explainability.
+links: []
+source_artifacts: []

@@ -1,0 +1,17 @@
+type: club
+title: ACM Engineering Lead
+dates:
+  start: Jan 2021
+  end: May 2023
+tags:
+  - leadership
+  - mentoring
+  - events
+tech:
+  - GitHub
+  - Python
+bullets:
+  - text: Led weekly code review sessions for student projects.
+  - text: Organized hack-night workshops focused on API design fundamentals.
+links: []
+source_artifacts: []

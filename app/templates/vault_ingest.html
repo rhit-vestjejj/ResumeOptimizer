@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Ingest Vault Item From Notes / Example</h2>
+  <p class="muted">Paste rough notes, old project descriptions, interview transcript snippets, or upload a PDF/DOCX/TXT. The app parses to vault schema and lets you review YAML before saving.</p>
+
+  {% if error %}
+    <p class="warn-text">{{ error }}</p>
+  {% endif %}
+
+  {% if warnings %}
+    <ul>
+      {% for warning in warnings %}
+      <li>{{ warning }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <form method="post" action="/vault/ingest/parse" enctype="multipart/form-data">
+    <label>Type Hint</label>
+    <select name="type_hint">
+      <option value="project" {% if type_hint == 'project' %}selected{% endif %}>project</option>
+      <option value="job" {% if type_hint == 'job' %}selected{% endif %}>job</option>
+      <option value="club" {% if type_hint == 'club' %}selected{% endif %}>club</option>
+      <option value="coursework" {% if type_hint == 'coursework' %}selected{% endif %}>coursework</option>
+      <option value="award" {% if type_hint == 'award' %}selected{% endif %}>award</option>
+      <option value="skillset" {% if type_hint == 'skillset' %}selected{% endif %}>skillset</option>
+      <option value="other" {% if type_hint == 'other' %}selected{% endif %}>other</option>
+    </select>
+
+    <label>Paste Notes / Example</label>
+    <textarea name="source_text" rows="14" placeholder="Example: Built an internal ETL project in Python...">{{ source_text }}</textarea>
+
+    <label>Optional Upload (PDF, DOCX, TXT, MD, YAML, JSON)</label>
+    <input type="file" name="file" accept=".pdf,.docx,.txt,.md,.rst,.rtf,.yaml,.yml,.json" />
+
+    <button type="submit">Parse To Vault YAML</button>
+  </form>
+</section>
+
+{% if raw_text_preview %}
+<section class="card">
+  <h2>Parsed Source Preview</h2>
+  <pre class="scroll-box">{{ raw_text_preview }}</pre>
+</section>
+{% endif %}
+
+{% if parsed_yaml %}
+<section class="card">
+  <h2>Parsed Vault YAML</h2>
+  <form method="post" action="/vault/new">
+    <textarea name="item_yaml" rows="24" required>{{ parsed_yaml }}</textarea>
+    <button type="submit">Save As New Vault Item</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

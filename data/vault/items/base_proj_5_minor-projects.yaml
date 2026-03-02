@@ -1,0 +1,18 @@
+type: project
+title: Algorithms from Scratch
+dates:
+  start: ''
+  end: ''
+tags:
+- Minor Projects
+- section:minor_projects
+- minor_project
+tech:
+- Python
+bullets:
+- text: Built machine learning models from first principles in Python, including Linear
+    & Logistic Regression, Neural Networks, Decision Trees, and Random Forests, implementing
+    optimization, backpropagation, and ensemble methods without ML libraries.
+links: []
+source_artifacts:
+- base_resume:project:5

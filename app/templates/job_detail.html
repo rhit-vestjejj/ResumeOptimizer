@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Job {{ job.job_id }}</h2>
+  <p>URL: {% if job.url %}<a href="{{ job.url }}" target="_blank" rel="noreferrer">{{ job.url }}</a>{% else %}-{% endif %}</p>
+  <p>Title: {{ job.title or '-' }} | Company: {{ job.company or '-' }}</p>
+  {% if error %}
+    <p class="warn-text">{{ error }}</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Job Description Text</h2>
+  <form method="post" action="/jobs/{{ job.job_id }}/jd">
+    <textarea name="jd_text" rows="24" required>{{ jd_text }}</textarea>
+    <button type="submit">Save JD Text</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Tailor Resume</h2>
+  {% if llm_available %}
+  <form method="post" action="/jobs/{{ job.job_id }}/tailor">
+    <label>Mode</label>
+    <select name="mode">
+      <option value="HARD_TRUTH">HARD_TRUTH</option>
+      <option value="FUCK_IT">FUCK_IT</option>
+    </select>
+    <label>Target Match Score (0-100)</label>
+    <input type="number" name="target_score" min="0" max="100" step="0.1" value="82" />
+    <label>Max Optimization Passes (1-5)</label>
+    <input type="number" name="max_passes" min="1" max="5" step="1" value="5" />
+    <button type="submit">Tailor Now</button>
+  </form>
+  {% else %}
+  <p class="warn-text">Tailoring disabled until <code>OPENAI_API_KEY</code> is set.</p>
+  {% endif %}
+
+  {% if latest_output %}
+  <p>Latest output: <code>{{ latest_output }}</code> - <a href="/outputs/{{ job.job_id }}/{{ latest_output }}/resume.pdf">Download PDF</a></p>
+  {% endif %}
+
+  {% if latest_report and latest_report.warnings %}
+  <h3>Latest Warnings</h3>
+  <ul>
+    {% for warning in latest_report.warnings %}
+      <li>{{ warning }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Selection Feedback</h2>
+  <p class="muted">Preferred titles are boosted. Blocked titles are penalized during matching.</p>
+  <form method="post" action="/jobs/{{ job.job_id }}/feedback">
+    <label>Preferred Titles (one per line)</label>
+    <textarea name="preferred_titles" rows="5">{% for title in feedback.preferred_titles %}{{ title }}
+{% endfor %}</textarea>
+    <label>Blocked Titles (one per line)</label>
+    <textarea name="blocked_titles" rows="5">{% for title in feedback.blocked_titles %}{{ title }}
+{% endfor %}</textarea>
+    <button type="submit">Save Feedback</button>
+  </form>
+</section>
+{% endblock %}

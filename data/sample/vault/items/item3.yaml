@@ -1,0 +1,17 @@
+type: coursework
+title: Graduate Database Systems Project
+dates:
+  start: Sep 2022
+  end: Dec 2022
+tags:
+  - database
+  - distributed systems
+tech:
+  - PostgreSQL
+  - Python
+  - Docker
+bullets:
+  - text: Implemented replication lag analyzer for sharded datasets.
+  - text: Benchmarked query performance before and after index strategy changes.
+links: []
+source_artifacts: []

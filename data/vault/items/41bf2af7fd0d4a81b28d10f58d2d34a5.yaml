@@ -1,0 +1,40 @@
+type: project
+title: "TechPoint XTern / MISO Challenge \u2013 Data Science & Policy Analytics"
+dates:
+  start: Sep 2025
+  end: Oct 2025
+tags:
+- data science
+- policy analytics
+- energy
+- cross-university collaboration
+tech:
+- NumPy
+- Matplotlib
+- Pandas
+bullets:
+- text: Collaborated in a cross-university team to identify early signals of energy
+    and policy strategy shifts.
+  situation: Participated in a challenge focused on energy and policy analytics.
+  task: Identify early signals of shifts in energy consumption and policy strategies.
+  action: Worked collaboratively with a cross-university team.
+  outcome: Identified early signals of energy and policy strategy shifts.
+  impact: Provided insights that could influence energy and policy decision-making.
+- text: Processed and cleaned large public datasets to uncover patterns in energy
+    consumption and policy activity, translating findings into actionable visual insights.
+  situation: Large public datasets on energy consumption and policy activity were
+    available but unprocessed.
+  task: Process and clean datasets to find meaningful patterns.
+  action: Used data processing and cleaning techniques with NumPy, Matplotlib, and
+    Pandas.
+  outcome: Uncovered patterns and created actionable visual insights.
+  impact: Enabled better understanding of energy and policy trends.
+- text: Consulted with MISO data scientists and engineers to refine methods and presented
+    findings to a panel of MISO executives.
+  situation: Need to validate and improve analysis methods and communicate results.
+  task: Refine analytical methods and present findings effectively.
+  action: Engaged with MISO data scientists and engineers; presented to executives.
+  outcome: Refined methods and successfully communicated findings to leadership.
+  impact: Enhanced credibility and potential adoption of insights by MISO executives.
+links: []
+source_artifacts: []

@@ -1,0 +1,119 @@
+\documentclass[10pt,letterpaper]{article}
+\usepackage[margin=0.64in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{enumitem}
+\usepackage{lmodern}
+\usepackage{titlesec}
+\usepackage{microtype}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.8pt}
+\setlist[itemize]{leftmargin=1.0em, itemsep=0.6pt, topsep=0.8pt, parsep=0pt, partopsep=0pt}
+\titlespacing*{\section}{0pt}{3.5pt}{1.8pt}
+\titleformat{\section}{\bfseries\normalsize}{}{0em}{}[\vspace{-2pt}\hrule\vspace{-2pt}]
+
+\begin{document}
+\small
+\raggedright
+
+{\LARGE \textbf{ {{- resume.identity.name | latex_escape -}} }}\\
+\texttt{ {{- resume.identity.email | latex_escape -}} }
+\;|\; {{- resume.identity.phone | latex_escape -}}
+\;|\; {{- resume.identity.location | latex_escape -}}
+{% for link in resume.identity.links %}
+\;|\; {{- link | latex_escape -}}
+{% endfor %}
+
+{% if resume.summary %}
+\section*{Summary}
+{{- resume.summary | latex_escape -}}
+{% endif %}
+
+{% if resume.education %}
+\section*{Education}
+{% for edu in resume.education %}
+\textbf{ {{- edu.school | latex_escape -}} } \hfill {{ (edu.dates.start or '') | latex_escape -}}{% if edu.dates.start and edu.dates.end %} -- {% endif %}{{ (edu.dates.end or '') | latex_escape -}}\\
+{{- edu.degree | latex_escape -}}{% if edu.major %} in {{ edu.major | latex_escape -}}{% endif %}{% if edu.minors %}; Minors: {{ edu.minors | join(', ') | latex_escape -}}{% endif %}{% if edu.gpa %}; GPA: {{ edu.gpa | latex_escape -}}{% endif %}\\
+{% if edu.coursework %}
+\textit{Coursework}: {{ edu.coursework | join(', ') | latex_escape -}}\\
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if resume.experience %}
+\section*{Experience}
+{% for exp in resume.experience %}
+\textbf{ {{- exp.company | latex_escape -}} } \hfill {{ (exp.dates.start or '') | latex_escape -}}{% if exp.dates.start and exp.dates.end %} -- {% endif %}{{ (exp.dates.end or '') | latex_escape -}}\\
+{{- exp.title | latex_escape -}}{% if exp.location %}, {{ exp.location | latex_escape -}}{% endif %}\\
+\begin{itemize}
+{% for bullet in exp.bullets %}
+\item {{ bullet | latex_escape -}}
+{% endfor %}
+\end{itemize}
+{% endfor %}
+{% endif %}
+
+{% if resume.skills and resume.skills.categories %}
+\section*{Skills}
+{% for category, entries in resume.skills.categories.items() %}
+{% set category_normalized = (category or '') | lower %}
+{% set is_generic = category_normalized in ['skills', 'core skills', 'technical skills', 'technologies', 'tools'] %}
+{% if is_generic %}
+{{ entries | join(', ') | latex_escape -}}\\
+{% else %}
+\textbf{ {{- category | latex_escape -}} }: {{ entries | join(', ') | latex_escape -}}\\
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% set ns = namespace(main_count=0, minor_count=0) %}
+{% for project in resume.projects %}
+{% if (project.section or 'projects') == 'minor_projects' %}
+{% set ns.minor_count = ns.minor_count + 1 %}
+{% else %}
+{% set ns.main_count = ns.main_count + 1 %}
+{% endif %}
+{% endfor %}
+
+{% if ns.main_count > 0 %}
+\section*{Projects}
+{% for project in resume.projects %}
+{% if (project.section or 'projects') != 'minor_projects' %}
+\textbf{ {{- project.name | latex_escape -}} }{% if project.dates %} \hfill {{ (project.dates.start or '') | latex_escape -}}{% if project.dates.start and project.dates.end %} -- {% endif %}{{ (project.dates.end or '') | latex_escape -}}{% endif %}\\
+{% if project.link %}{{- project.link | latex_escape -}}\\{% endif %}
+{% if project.tech %}\textit{Tech}: {{ project.tech | join(', ') | latex_escape -}}\\{% endif %}
+\begin{itemize}
+{% for bullet in project.bullets %}
+\item {{ bullet | latex_escape -}}
+{% endfor %}
+\end{itemize}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if ns.minor_count > 0 %}
+\section*{Minor Projects}
+{% for project in resume.projects %}
+{% if (project.section or 'projects') == 'minor_projects' %}
+\textbf{ {{- project.name | latex_escape -}} }{% if project.dates %} \hfill {{ (project.dates.start or '') | latex_escape -}}{% if project.dates.start and project.dates.end %} -- {% endif %}{{ (project.dates.end or '') | latex_escape -}}{% endif %}\\
+{% if project.tech %}\textit{Tech}: {{ project.tech | join(', ') | latex_escape -}}\\{% endif %}
+\begin{itemize}
+{% for bullet in project.bullets %}
+\item {{ bullet | latex_escape -}}
+{% endfor %}
+\end{itemize}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if resume.awards %}
+\section*{Awards}
+\begin{itemize}
+{% for award in resume.awards %}
+\item {{ award | latex_escape -}}
+{% endfor %}
+\end{itemize}
+{% endif %}
+
+\end{document}
