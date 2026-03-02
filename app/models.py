@@ -166,6 +166,7 @@ class SelectedItem(StrictModel):
     source_id: str
     title: str
     score: float
+    why_included: str = ''
 
 
 class TailorReport(StrictModel):

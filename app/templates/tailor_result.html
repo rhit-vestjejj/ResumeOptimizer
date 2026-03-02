@@ -27,7 +27,12 @@
   <h3>Evidence Selected</h3>
   <ul>
     {% for item in chosen_items %}
-      <li><strong>{{ item.title }}</strong> ({{ item.source_type }}) - score {{ item.score }}</li>
+      <li>
+        <strong>{{ item.title }}</strong> ({{ item.source_type }}) - score {{ item.score }}
+        {% if item.why_included %}
+        <br /><span class="muted">{{ item.why_included }}</span>
+        {% endif %}
+      </li>
     {% endfor %}
     {% if not chosen_items %}
       <li>No evidence items reported.</li>

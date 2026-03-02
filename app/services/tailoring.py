@@ -124,15 +124,14 @@ SUMMARY_ALLOWED_GENERIC_TERMS = {
 }
 
 MAX_EXP_ITEMS = 3
-MAX_PROJECT_ITEMS = 6
-MIN_PROJECT_ITEMS = 2
+MAX_PROJECT_ITEMS = 4
+MIN_PROJECT_ITEMS = 3
 MAX_BULLETS_PER_ITEM = 3
 MAX_TOTAL_BULLETS = 12
 MAX_PAGE_UNITS = 41
 MIN_PROJECT_BULLETS = 2
-MUST_HAVE_MIN_TERMS = 3
-MUST_HAVE_MIN_COVERAGE_BASE = 0.45
-MUST_HAVE_MIN_COVERAGE_STEP = 0.08
+MUST_HAVE_MIN_TERMS = 1
+MUST_HAVE_TARGET_COVERAGE = 0.65
 
 
 @dataclass
@@ -795,13 +794,14 @@ def _jd_term_sets(jd: JDAnalysis) -> Tuple[Set[str], Set[str], Set[str], Set[str
 
 def _required_must_have_terms(jd: JDAnalysis) -> Set[str]:
     required_tokens = set(_canonicalize_terms(tokenize(' '.join(jd.required_skills))))
-    strict_required = {term for term in required_tokens if _is_high_signal_term(term)}
-    if len(strict_required) >= MUST_HAVE_MIN_TERMS:
-        return strict_required
-    return {
+    filtered_required = {
         term for term in required_tokens
         if term not in STOPWORDS and term not in GENERIC_TERMS and len(term) > 2
     }
+    strict_required = {term for term in filtered_required if _is_high_signal_term(term)}
+    if len(strict_required) >= 2:
+        return strict_required
+    return filtered_required
 
 
 def _selected_required_coverage(selected: Sequence[Tuple[CandidateSource, float]], required_terms: Set[str]) -> float:
@@ -811,6 +811,54 @@ def _selected_required_coverage(selected: Sequence[Tuple[CandidateSource, float]
     for candidate_source, _ in selected:
         covered.update(_candidate_token_set(candidate_source.candidate))
     return len(covered & required_terms) / max(1, len(required_terms))
+
+
+def _ordered_overlap_terms(overlap_terms: Set[str], jd_phrases: Sequence[str], limit: int = 3) -> List[str]:
+    ordered: List[str] = []
+    for term in _canonicalize_terms(tokenize(' '.join(jd_phrases))):
+        if term in overlap_terms and term not in ordered:
+            ordered.append(term)
+            if len(ordered) >= limit:
+                return ordered
+    for term in sorted(overlap_terms):
+        if term in ordered:
+            continue
+        ordered.append(term)
+        if len(ordered) >= limit:
+            break
+    return ordered
+
+
+def _build_selection_reason(
+    candidate_source: CandidateSource,
+    jd: JDAnalysis,
+    required_terms: Set[str],
+) -> str:
+    candidate_terms = _candidate_token_set(candidate_source.candidate)
+    required_hits = _ordered_overlap_terms(candidate_terms & required_terms, jd.required_skills, limit=3)
+    role_tokens = set(_canonicalize_terms(tokenize(' '.join(jd.target_role_keywords))))
+    role_hits = _ordered_overlap_terms(candidate_terms & role_tokens, jd.target_role_keywords, limit=2)
+    responsibility_tokens = set(_canonicalize_terms(tokenize(' '.join(jd.responsibilities))))
+    responsibility_hits = _ordered_overlap_terms(candidate_terms & responsibility_tokens, jd.responsibilities, limit=2)
+
+    if _is_experience_candidate(candidate_source):
+        evidence_type = 'work evidence'
+    elif _is_coursework_candidate(candidate_source):
+        evidence_type = 'coursework evidence'
+    else:
+        evidence_type = 'project evidence'
+
+    reasons: List[str] = []
+    if required_hits:
+        reasons.append(f"covers must-have terms like {_join_terms_for_summary(required_hits)}")
+    if role_hits:
+        reasons.append(f"aligns with role focus on {_join_terms_for_summary(role_hits)}")
+    elif responsibility_hits:
+        reasons.append(f"supports core responsibilities around {_join_terms_for_summary(responsibility_hits)}")
+    if not reasons:
+        reasons.append('ranked highly by ATS match scoring')
+
+    return f"Selected as {evidence_type}: {'; '.join(reasons)}."
 
 
 def _parse_feedback_terms(values: Sequence[str]) -> Tuple[Set[str], Set[str]]:
@@ -1316,6 +1364,7 @@ def tailor_resume(
     warnings: List[str] = []
 
     selected = _select_top_candidates(scored, jd, optimization_level=optimization_level)
+    required_terms = _required_must_have_terms(jd)
     score_lookup: Dict[str, float] = {}
     for candidate_source, score in selected:
         candidate = candidate_source.candidate
@@ -1403,18 +1452,22 @@ def tailor_resume(
                 source_id=candidate.source_id,
                 title=candidate.title,
                 score=score,
+                why_included=_build_selection_reason(candidate_source, jd, required_terms),
             )
         )
 
     tailored = prune_resume_for_one_page(tailored, score_lookup, warnings)
     tailored = _ensure_target_summary(tailored, jd, jd_text, job_title_hint)
 
-    required_terms = _required_must_have_terms(jd)
     required_coverage = _selected_required_coverage(selected, required_terms) if required_terms else 1.0
     if required_terms:
+        target_coverage = MUST_HAVE_TARGET_COVERAGE * 100.0
         warnings.append(
-            f'Must-have coverage after selection: {required_coverage * 100:.1f}% ({len(required_terms)} required terms).'
+            f'Must-have coverage after selection: {required_coverage * 100:.1f}% '
+            f'(target {target_coverage:.1f}% across {len(required_terms)} required terms).'
         )
+        if required_coverage < MUST_HAVE_TARGET_COVERAGE:
+            warnings.append('Must-have coverage stayed below target after enforcement; review keyword gaps before applying.')
 
     covered = _covered_keywords(jd, tailored)
     required_keywords = unique_preserve_order(tokenize(' '.join(jd.required_skills + jd.target_role_keywords)))
@@ -1453,18 +1506,9 @@ def _is_project_candidate(candidate_source: CandidateSource) -> bool:
 def _selection_limits(jd: JDAnalysis, available_projects: int) -> Tuple[int, int]:
     jd_tokens = set(tokenize(' '.join(jd.target_role_keywords + jd.required_skills + jd.responsibilities)))
     internship_like = any(token in jd_tokens for token in {'intern', 'internship', 'entry', 'newgrad', 'student'})
-    jd_specificity = len({
-        token for token in _canonicalize_terms(jd_tokens)
-        if _is_high_signal_term(token)
-    })
 
     exp_limit = 2 if internship_like else MAX_EXP_ITEMS
-    if internship_like:
-        project_limit = 4
-    else:
-        project_limit = 3 if exp_limit >= 3 else 4
-        if jd_specificity >= 16:
-            project_limit += 1
+    project_limit = MAX_PROJECT_ITEMS
     project_limit = min(project_limit, MAX_PROJECT_ITEMS, available_projects)
     if available_projects > 0:
         project_limit = max(project_limit, min(MIN_PROJECT_ITEMS, available_projects))
@@ -1587,7 +1631,7 @@ def _enforce_must_have_coverage(
     if len(required_terms) < MUST_HAVE_MIN_TERMS:
         return selected
 
-    target_coverage = min(0.85, MUST_HAVE_MIN_COVERAGE_BASE + (max(0, optimization_level - 1) * MUST_HAVE_MIN_COVERAGE_STEP))
+    target_coverage = MUST_HAVE_TARGET_COVERAGE
     attempts = 0
     max_attempts = max(1, len(scored))
     while _selected_required_coverage(selected, required_terms) < target_coverage and attempts < max_attempts:
@@ -1625,12 +1669,8 @@ def _select_top_candidates(
     min_projects = min(MIN_PROJECT_ITEMS, len(project_pool))
     if len(selected_projects) < min_projects:
         selected_ids = {candidate_source.candidate.source_id for candidate_source, _ in selected_projects}
-        top_project_score = project_pool[0][1] if project_pool else 0.0
-        supplemental_floor = max(0.0, top_project_score * 0.45)
         for candidate_source, score in project_pool:
             if candidate_source.candidate.source_id in selected_ids:
-                continue
-            if score < supplemental_floor:
                 continue
             selected_projects.append((candidate_source, score))
             selected_ids.add(candidate_source.candidate.source_id)
@@ -1698,6 +1738,13 @@ def prune_resume_for_one_page(
             warnings.append(f'Pruned bullets for project: {item.name}')
             item.bullets = item.bullets[:project_cap]
 
+    while len(pruned.projects) > MAX_PROJECT_ITEMS:
+        project_index = _lowest_scoring_project_index(pruned, score_lookup)
+        if project_index is None:
+            break
+        removed = pruned.projects.pop(project_index)
+        warnings.append(f'Removed extra project to enforce {MAX_PROJECT_ITEMS}-project cap: {removed.name}')
+
     _compact_skills_for_space(pruned, warnings, max_per_category=9)
 
     while True:
@@ -1714,10 +1761,11 @@ def prune_resume_for_one_page(
                 if len(project.bullets) > MIN_PROJECT_BULLETS:
                     project.bullets = project.bullets[:-1]
                     warnings.append(f'Trimmed project bullet for one-page constraint: {project.name}')
-                else:
+                    continue
+                if len(pruned.projects) > MIN_PROJECT_ITEMS:
                     removed = pruned.projects.pop(project_index)
                     warnings.append(f'Removed low-priority project for one-page constraint: {removed.name}')
-                continue
+                    continue
 
         exp_index = _experience_with_extra_bullets(pruned, min_bullets=1)
         if exp_index is not None:
@@ -1728,6 +1776,16 @@ def prune_resume_for_one_page(
         changed = _compact_skills_for_space(pruned, warnings, max_per_category=6)
         if changed:
             continue
+
+        if pruned.projects:
+            project_index = _lowest_scoring_project_index(pruned, score_lookup)
+            if project_index is not None:
+                removed = pruned.projects.pop(project_index)
+                warnings.append(
+                    f'Removed project below preferred {MIN_PROJECT_ITEMS}-project minimum to satisfy one-page constraint: '
+                    f'{removed.name}'
+                )
+                continue
 
         break
 
@@ -1838,6 +1896,9 @@ def expand_resume_with_projects(
     score_lookup: Dict[str, float],
     used_expansions: Set[str],
 ) -> Tuple[CanonicalResume, bool, Optional[str]]:
+    if len(resume.projects) >= MAX_PROJECT_ITEMS:
+        return resume, False, None
+
     current_names = {normalize_token(project.name) for project in resume.projects}
 
     candidates: List[Tuple[str, ProjectEntry, float]] = []

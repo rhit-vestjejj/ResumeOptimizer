@@ -7,7 +7,7 @@ import yaml
 
 from app.models import CanonicalResume, JDAnalysis, TailorMode, VaultItem
 from app.services.latex import LatexService
-from app.services.tailoring import tailor_resume
+from app.services.tailoring import MAX_PROJECT_ITEMS, tailor_resume
 
 
 class FakeLLM:
@@ -64,6 +64,9 @@ def test_tailor_integration_both_modes_and_render(tmp_path: Path) -> None:
         assert pdf_path.exists()
         assert result.report.mode == mode
         assert result.report.chosen_items
+        assert all(item.why_included for item in result.report.chosen_items)
+        assert all(item.why_included.startswith('Selected as ') for item in result.report.chosen_items)
+        assert len(result.tailored_resume.projects) <= MAX_PROJECT_ITEMS
         assert result.tailored_resume.summary is not None
         assert 'Machine Learning Engineer' in result.tailored_resume.summary
         summary = result.tailored_resume.summary

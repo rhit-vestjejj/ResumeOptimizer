@@ -110,7 +110,7 @@ That caps revenue.
 
 ⸻
 
-Step 5: Make It Opinionated
+Step 5: Make It Opinionated [COMPLETE - 2026-03-02]
 
 Right now it’s configurable.
 

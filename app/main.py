@@ -39,7 +39,13 @@ from app.services.latex import LatexRenderError, LatexService
 from app.services.llm import LLMService, LLMUnavailableError
 from app.services.repository import DataRepository
 from app.services.scraper import ScrapeError, scrape_job_posting
-from app.services.tailoring import expand_resume_with_projects, tailor_resume, tighten_resume_for_one_page
+from app.services.tailoring import (
+    MAX_PROJECT_ITEMS,
+    MIN_PROJECT_ITEMS,
+    expand_resume_with_projects,
+    tailor_resume,
+    tighten_resume_for_one_page,
+)
 from app.services.vault_sync import sync_base_resume_to_vault
 from app.services.vault_ingest import VaultIngestError, parse_uploaded_text, parse_vault_source_text
 from app.storage import load_json, save_json
@@ -59,6 +65,9 @@ except LLMUnavailableError as exc:
 app = FastAPI(title='Local Resume Tailor', version='1.0.0')
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
 templates = Jinja2Templates(directory='app/templates')
+DEFAULT_TAILOR_MODE = TailorMode.HARD_TRUTH
+DEFAULT_TARGET_MATCH_SCORE = 82.0
+DEFAULT_MAX_OPTIMIZATION_PASSES = 5
 
 
 def render(request: Request, template_name: str, context: Dict[str, Any]) -> HTMLResponse:
@@ -177,9 +186,9 @@ async def generate_tailored_resume(
         base_resume=canonical,
         job_id=job_id,
         jd_text=pasted_jd_text,
-        mode=TailorMode.HARD_TRUTH,
-        target_score=82.0,
-        max_passes=5,
+        mode=DEFAULT_TAILOR_MODE,
+        target_score=DEFAULT_TARGET_MATCH_SCORE,
+        max_passes=DEFAULT_MAX_OPTIMIZATION_PASSES,
         job_title_hint=job.title,
         feedback_payload=_empty_feedback_payload(),
     )
@@ -188,7 +197,7 @@ async def generate_tailored_resume(
     return render(
         request,
         'tailor_result.html',
-        _tailor_result_context(job=job, mode=TailorMode.HARD_TRUTH, workflow=workflow, prepended_warnings=extraction_warnings),
+        _tailor_result_context(job=job, mode=DEFAULT_TAILOR_MODE, workflow=workflow, prepended_warnings=extraction_warnings),
     )
 
 
@@ -942,7 +951,9 @@ def _run_tailoring_workflow(
     used_expansions: set[str] = set()
     tighten_level = 0
     expand_attempts = 0
-    max_expand_attempts = 8
+    max_expand_attempts = 6
+    project_target_min = MIN_PROJECT_ITEMS
+    project_target_max = MAX_PROJECT_ITEMS
     last_stable_resume = resume_to_render
 
     while True:
@@ -973,6 +984,8 @@ def _run_tailoring_workflow(
             continue
 
         last_stable_resume = resume_to_render
+        if len(resume_to_render.projects) >= project_target_max:
+            break
         if expand_attempts >= max_expand_attempts:
             break
 
@@ -998,7 +1011,10 @@ def _run_tailoring_workflow(
 
         trial_pages = latex_service.count_pdf_pages(trial_pdf_path)
         if trial_pages <= 1:
-            tailored.report.warnings.append('Added project content to use remaining page space.')
+            if len(resume_to_render.projects) <= project_target_min:
+                tailored.report.warnings.append('Added project content to hit the opinionated minimum project count.')
+            else:
+                tailored.report.warnings.append('Added project content to use remaining page space.')
             last_stable_resume = resume_to_render
             continue
 
@@ -1011,6 +1027,12 @@ def _run_tailoring_workflow(
             tailored.report.warnings.append(f'PDF compile failed after expansion rollback: {exc}')
             pdf_exists = False
         break
+
+    if len(resume_to_render.projects) < project_target_min:
+        tailored.report.warnings.append(
+            f'Could only fit {len(resume_to_render.projects)} project(s) on one page; preferred range is '
+            f'{project_target_min}-{project_target_max}.'
+        )
 
     report_path = output_dir / 'report.json'
     try:
@@ -1083,9 +1105,6 @@ def _tailor_result_context(
 async def jobs_tailor(
     request: Request,
     job_id: str,
-    mode: TailorMode = Form(...),
-    target_score: float = Form(default=82.0),
-    max_passes: int = Form(default=5),
 ) -> HTMLResponse:
     job = repository.get_job(job_id)
     if not job:
@@ -1128,9 +1147,9 @@ async def jobs_tailor(
         base_resume=base_resume,
         job_id=job_id,
         jd_text=jd_text,
-        mode=mode,
-        target_score=target_score,
-        max_passes=max_passes,
+        mode=DEFAULT_TAILOR_MODE,
+        target_score=DEFAULT_TARGET_MATCH_SCORE,
+        max_passes=DEFAULT_MAX_OPTIMIZATION_PASSES,
         job_title_hint=job.title,
         feedback_payload=feedback_payload,
     )
@@ -1138,7 +1157,7 @@ async def jobs_tailor(
     return render(
         request,
         'tailor_result.html',
-        _tailor_result_context(job=job, mode=mode, workflow=workflow),
+        _tailor_result_context(job=job, mode=DEFAULT_TAILOR_MODE, workflow=workflow),
     )
 
 
