@@ -23,6 +23,35 @@
 </section>
 
 <section class="card">
+  <h2>Match Explanation</h2>
+  <h3>Evidence Selected</h3>
+  <ul>
+    {% for item in chosen_items %}
+      <li><strong>{{ item.title }}</strong> ({{ item.source_type }}) - score {{ item.score }}</li>
+    {% endfor %}
+    {% if not chosen_items %}
+      <li>No evidence items reported.</li>
+    {% endif %}
+  </ul>
+  <h3>Keywords Covered</h3>
+  <p>
+    {% if keywords_covered %}
+      {{ keywords_covered | join(', ') }}
+    {% else %}
+      None reported.
+    {% endif %}
+  </p>
+  <h3>Keywords Missed</h3>
+  <p>
+    {% if keywords_missed %}
+      {{ keywords_missed | join(', ') }}
+    {% else %}
+      None reported.
+    {% endif %}
+  </p>
+</section>
+
+<section class="card">
   <h2>Warnings</h2>
   <ul>
     {% for warning in warnings %}
@@ -35,6 +64,8 @@
 </section>
 
 <section class="card">
-  <a href="/jobs/{{ job.job_id }}">Back to job</a>
+  <a href="/">Generate Another Resume</a>
+  <span class="muted"> | </span>
+  <a href="/jobs/{{ job.job_id }}">Open Job Workspace</a>
 </section>
 {% endblock %}

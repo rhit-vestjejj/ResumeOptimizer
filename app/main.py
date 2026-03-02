@@ -86,7 +86,132 @@ async def require_token_header(request: Request, call_next):
     return await call_next(request)
 
 
+def _generate_page_context(*, jd_text: str = '', error: Optional[str] = None, warnings: Optional[list[str]] = None) -> Dict[str, Any]:
+    return {
+        'jd_text': jd_text,
+        'error': error,
+        'warnings': warnings or [],
+        'base_resume_exists': repository.load_base_resume() is not None,
+        'vault_count': len(repository.list_vault_items()),
+    }
+
+
 @app.get('/', response_class=HTMLResponse)
+async def generate_page(request: Request) -> HTMLResponse:
+    return render(request, 'generate.html', _generate_page_context())
+
+
+@app.post('/generate', response_class=HTMLResponse)
+async def generate_tailored_resume(
+    request: Request,
+    resume_file: UploadFile = File(...),
+    jd_text: str = Form(default=''),
+) -> HTMLResponse:
+    pasted_jd_text = (jd_text or '').strip()
+    if not pasted_jd_text:
+        return render(
+            request,
+            'generate.html',
+            _generate_page_context(jd_text=pasted_jd_text, error='Paste a job description before generating.'),
+        )
+
+    if not llm_service or not llm_service.available:
+        return render(
+            request,
+            'generate.html',
+            _generate_page_context(
+                jd_text=pasted_jd_text,
+                error='OPENAI_API_KEY is not configured. Tailoring is disabled until set.',
+            ),
+        )
+
+    if not resume_file.filename:
+        return render(
+            request,
+            'generate.html',
+            _generate_page_context(jd_text=pasted_jd_text, error='Resume file is required.'),
+        )
+
+    suffix = Path(resume_file.filename).suffix.lower()
+    if suffix not in {'.pdf', '.docx', '.txt'}:
+        return render(
+            request,
+            'generate.html',
+            _generate_page_context(
+                jd_text=pasted_jd_text,
+                error='Supported resume file types: PDF, DOCX, TXT.',
+            ),
+        )
+
+    upload_path = settings.data_dir / 'uploads' / f'{uuid.uuid4().hex}{suffix}'
+    upload_path.write_bytes(await resume_file.read())
+
+    try:
+        upload_result = public_upload_resume(upload_path, enable_ocr=settings.enable_ocr, llm=llm_service)
+        canonical_payload = upload_result.get('canonical') or upload_result.get('parse_mirror', {}).get('canonical')
+        canonical = CanonicalResume.model_validate(canonical_payload)
+    except Exception as exc:
+        return render(
+            request,
+            'generate.html',
+            _generate_page_context(jd_text=pasted_jd_text, error=f'Resume processing failed: {exc}'),
+        )
+
+    try:
+        repository.save_base_resume(canonical)
+        sync_base_resume_to_vault(repository, canonical)
+    except Exception as exc:
+        return render(
+            request,
+            'generate.html',
+            _generate_page_context(jd_text=pasted_jd_text, error=f'Failed to save base resume: {exc}'),
+        )
+
+    job_id = uuid.uuid4().hex[:12]
+    job = JobRecord(job_id=job_id, title='Pasted Job Description', company=None, url=None)
+    repository.save_job(job, pasted_jd_text)
+
+    workflow = _run_tailoring_workflow(
+        base_resume=canonical,
+        job_id=job_id,
+        jd_text=pasted_jd_text,
+        mode=TailorMode.HARD_TRUTH,
+        target_score=82.0,
+        max_passes=5,
+        job_title_hint=job.title,
+        feedback_payload=_empty_feedback_payload(),
+    )
+
+    extraction_warnings = [str(w).strip() for w in upload_result.get('extraction_warnings', []) if str(w).strip()]
+    return render(
+        request,
+        'tailor_result.html',
+        _tailor_result_context(job=job, mode=TailorMode.HARD_TRUTH, workflow=workflow, prepended_warnings=extraction_warnings),
+    )
+
+
+@app.get('/advance', response_class=HTMLResponse)
+async def advance_page(request: Request) -> HTMLResponse:
+    base_resume = repository.load_base_resume()
+    vault_items = repository.list_vault_items()
+    jobs = repository.list_jobs()
+    return render(
+        request,
+        'advanced.html',
+        {
+            'base_resume_exists': base_resume is not None,
+            'vault_count': len(vault_items),
+            'job_count': len(jobs),
+        },
+    )
+
+
+@app.get('/advanced')
+async def advanced_redirect() -> RedirectResponse:
+    return RedirectResponse(url='/advance', status_code=307)
+
+
+@app.get('/advance/dashboard', response_class=HTMLResponse)
 async def dashboard(request: Request) -> HTMLResponse:
     base_resume = repository.load_base_resume()
     vault_items = repository.list_vault_items()
@@ -100,6 +225,11 @@ async def dashboard(request: Request) -> HTMLResponse:
             'job_count': len(jobs),
         },
     )
+
+
+@app.get('/advanced/dashboard')
+async def advanced_dashboard_redirect() -> RedirectResponse:
+    return RedirectResponse(url='/advance/dashboard', status_code=307)
 
 
 @app.get('/audit', response_class=HTMLResponse)
@@ -683,51 +813,23 @@ async def jobs_update_feedback(
     return RedirectResponse(url=f'/jobs/{job_id}', status_code=303)
 
 
-@app.post('/jobs/{job_id}/tailor', response_class=HTMLResponse)
-async def jobs_tailor(
-    request: Request,
+def _empty_feedback_payload() -> Dict[str, list[str]]:
+    return {'preferred_titles': [], 'blocked_titles': []}
+
+
+def _run_tailoring_workflow(
+    *,
+    base_resume: CanonicalResume,
     job_id: str,
-    mode: TailorMode = Form(...),
-    target_score: float = Form(default=82.0),
-    max_passes: int = Form(default=5),
-) -> HTMLResponse:
-    job = repository.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail='Job not found')
-
-    base_resume = repository.load_base_resume()
-    if not base_resume:
-        return render(
-            request,
-            'job_detail.html',
-            {
-                'job': job,
-                'jd_text': repository.get_job_text(job_id),
-                'error': 'Base resume is missing. Upload and save canonical resume first.',
-                'latest_output': None,
-                'latest_report': None,
-                'feedback': {'preferred_titles': [], 'blocked_titles': []},
-            },
-        )
-
-    if not llm_service or not llm_service.available:
-        return render(
-            request,
-            'job_detail.html',
-            {
-                'job': job,
-                'jd_text': repository.get_job_text(job_id),
-                'error': 'OPENAI_API_KEY is not configured. Tailoring is disabled until set.',
-                'latest_output': None,
-                'latest_report': None,
-                'feedback': {'preferred_titles': [], 'blocked_titles': []},
-            },
-        )
-
-    jd_text = repository.get_job_text(job_id)
+    jd_text: str,
+    mode: TailorMode,
+    target_score: float,
+    max_passes: int,
+    job_title_hint: Optional[str],
+    feedback_payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    assert llm_service and llm_service.available
     vault_items = repository.list_vault_items()
-    feedback = repository.get_job_feedback(job_id)
-    feedback_payload = feedback.model_dump(mode='json') if feedback else {'preferred_titles': [], 'blocked_titles': []}
 
     clamped_target_score = max(0.0, min(100.0, float(target_score)))
     clamped_max_passes = max(1, min(5, int(max_passes)))
@@ -744,7 +846,7 @@ async def jobs_tailor(
             jd_text=jd_text,
             mode=mode,
             llm=llm_service,
-            job_title_hint=job.title,
+            job_title_hint=job_title_hint,
             selection_feedback=feedback_payload,
             optimization_level=optimization_pass,
         )
@@ -862,8 +964,6 @@ async def jobs_tailor(
         break
 
     report_path = output_dir / 'report.json'
-    save_json(report_path, tailored.report.model_dump(mode='json'))
-
     try:
         ats_render_result = public_render_outputs(resume_to_render, output_dir, filename_prefix='ats_')
         ats_pdf_exists = Path(ats_render_result['pdf_path']).exists()
@@ -871,30 +971,125 @@ async def jobs_tailor(
         ats_txt_exists = Path(ats_render_result['txt_path']).exists()
         if not ats_render_result['pdf_text_layer']['ok']:
             tailored.report.warnings.append('ATS PDF text-layer verification failed.')
-            save_json(report_path, tailored.report.model_dump(mode='json'))
     except Exception as exc:
         tailored.report.warnings.append(f'ATS output render failed: {exc}')
-        save_json(report_path, tailored.report.model_dump(mode='json'))
+    save_json(report_path, tailored.report.model_dump(mode='json'))
+
+    return {
+        'warnings': list(tailored.report.warnings),
+        'keywords_covered': list(tailored.report.keywords_covered),
+        'keywords_missed': list(tailored.report.keywords_missed),
+        'chosen_items': [item.model_dump(mode='json') for item in tailored.report.chosen_items],
+        'job_id': job_id,
+        'timestamp': output_dir.name,
+        'pdf_exists': pdf_exists,
+        'ats_pdf_exists': ats_pdf_exists,
+        'ats_docx_exists': ats_docx_exists,
+        'ats_txt_exists': ats_txt_exists,
+        'compile_error': compile_error,
+        'match_score': optimization_match_score,
+        'target_score': clamped_target_score,
+        'passes_used': passes_executed,
+        'max_passes': clamped_max_passes,
+    }
+
+
+def _tailor_result_context(
+    *,
+    job: JobRecord,
+    mode: TailorMode,
+    workflow: Dict[str, Any],
+    prepended_warnings: Optional[list[str]] = None,
+) -> Dict[str, Any]:
+    warnings: list[str] = []
+    seen: set[str] = set()
+    for warning in [*(prepended_warnings or []), *workflow['warnings']]:
+        cleaned = str(warning).strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        warnings.append(cleaned)
+    return {
+        'job': job,
+        'mode': mode,
+        'warnings': warnings,
+        'job_id': workflow['job_id'],
+        'timestamp': workflow['timestamp'],
+        'pdf_exists': workflow['pdf_exists'],
+        'ats_pdf_exists': workflow['ats_pdf_exists'],
+        'ats_docx_exists': workflow['ats_docx_exists'],
+        'ats_txt_exists': workflow['ats_txt_exists'],
+        'compile_error': workflow['compile_error'],
+        'match_score': workflow['match_score'],
+        'target_score': workflow['target_score'],
+        'passes_used': workflow['passes_used'],
+        'max_passes': workflow['max_passes'],
+        'chosen_items': workflow['chosen_items'],
+        'keywords_covered': workflow['keywords_covered'],
+        'keywords_missed': workflow['keywords_missed'],
+    }
+
+
+@app.post('/jobs/{job_id}/tailor', response_class=HTMLResponse)
+async def jobs_tailor(
+    request: Request,
+    job_id: str,
+    mode: TailorMode = Form(...),
+    target_score: float = Form(default=82.0),
+    max_passes: int = Form(default=5),
+) -> HTMLResponse:
+    job = repository.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail='Job not found')
+
+    feedback = repository.get_job_feedback(job_id)
+    feedback_payload = feedback.model_dump(mode='json') if feedback else _empty_feedback_payload()
+
+    base_resume = repository.load_base_resume()
+    if not base_resume:
+        return render(
+            request,
+            'job_detail.html',
+            {
+                'job': job,
+                'jd_text': repository.get_job_text(job_id),
+                'error': 'Base resume is missing. Upload and save canonical resume first.',
+                'latest_output': None,
+                'latest_report': None,
+                'feedback': feedback_payload,
+            },
+        )
+
+    if not llm_service or not llm_service.available:
+        return render(
+            request,
+            'job_detail.html',
+            {
+                'job': job,
+                'jd_text': repository.get_job_text(job_id),
+                'error': 'OPENAI_API_KEY is not configured. Tailoring is disabled until set.',
+                'latest_output': None,
+                'latest_report': None,
+                'feedback': feedback_payload,
+            },
+        )
+
+    jd_text = repository.get_job_text(job_id)
+    workflow = _run_tailoring_workflow(
+        base_resume=base_resume,
+        job_id=job_id,
+        jd_text=jd_text,
+        mode=mode,
+        target_score=target_score,
+        max_passes=max_passes,
+        job_title_hint=job.title,
+        feedback_payload=feedback_payload,
+    )
 
     return render(
         request,
         'tailor_result.html',
-        {
-            'job': job,
-            'mode': mode,
-            'warnings': tailored.report.warnings,
-            'job_id': job_id,
-            'timestamp': output_dir.name,
-            'pdf_exists': pdf_exists,
-            'ats_pdf_exists': ats_pdf_exists,
-            'ats_docx_exists': ats_docx_exists,
-            'ats_txt_exists': ats_txt_exists,
-            'compile_error': compile_error,
-            'match_score': optimization_match_score,
-            'target_score': clamped_target_score,
-            'passes_used': passes_executed,
-            'max_passes': clamped_max_passes,
-        },
+        _tailor_result_context(job=job, mode=mode, workflow=workflow),
     )
 
 

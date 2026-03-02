@@ -46,7 +46,7 @@ Trust > Features.
 
 ⸻
 
-Step 2: Collapse the Surface Area
+Step 2: Collapse the Surface Area [COMPLETE - 2026-03-02]
 
 You have too many entry points:
 	•	Audit

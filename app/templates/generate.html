@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Generate Tailored Resume</h2>
+  <p class="muted">Upload resume, paste a job description, and generate a tailored bundle in one run.</p>
+  {% if error %}
+    <p class="warn-text">{{ error }}</p>
+  {% endif %}
+  {% if warnings %}
+    <ul>
+      {% for warning in warnings %}
+        <li>{{ warning }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  <form method="post" action="/generate" enctype="multipart/form-data">
+    <label>1. Resume file (PDF, DOCX, TXT)</label>
+    <input type="file" name="resume_file" accept=".pdf,.docx,.txt" required />
+    <label>2. Job description</label>
+    <textarea name="jd_text" rows="18" required>{{ jd_text }}</textarea>
+    <button type="submit">3. Generate Tailored Resume</button>
+  </form>
+</section>
+
+<section class="card-grid">
+  <article class="card">
+    <h3>Current Base Resume</h3>
+    <p>{% if base_resume_exists %}<strong>Loaded</strong>{% else %}<strong>Not saved yet</strong>{% endif %}</p>
+  </article>
+  <article class="card">
+    <h3>Vault Items</h3>
+    <p><strong>{{ vault_count }}</strong> entries available for selection.</p>
+  </article>
+  <article class="card">
+    <h3>Result Bundle</h3>
+    <p>Each run generates PDF, ATS TXT, ATS DOCX, and a ZIP bundle.</p>
+  </article>
+</section>
+
+{% if not llm_available %}
+<section class="card">
+  <p class="warn-text">Tailoring is disabled until <code>OPENAI_API_KEY</code> is configured.</p>
+</section>
+{% endif %}
+
+{% if token_header %}
+<section class="card">
+  <p class="muted">POST token header: <code>{{ token_header }}</code> (checked only when <code>RESUME_APP_TOKEN</code> is set).</p>
+</section>
+{% endif %}
+{% endblock %}

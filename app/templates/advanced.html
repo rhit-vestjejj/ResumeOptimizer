@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Advanced Tools</h2>
+  <p class="muted">Power-user routes are still available here.</p>
+</section>
+
+<section class="card-grid">
+  <article class="card">
+    <h3>Resume Canonical Editor</h3>
+    <p>Status: {% if base_resume_exists %}<strong>Loaded</strong>{% else %}<strong>Missing</strong>{% endif %}</p>
+    <a href="/resume/upload">Open Resume Upload / YAML Editor</a>
+  </article>
+  <article class="card">
+    <h3>Vault Manager</h3>
+    <p>Total items: <strong>{{ vault_count }}</strong></p>
+    <a href="/vault">Open Vault</a>
+  </article>
+  <article class="card">
+    <h3>Job Workspace</h3>
+    <p>Total jobs: <strong>{{ job_count }}</strong></p>
+    <a href="/jobs">Open Jobs</a>
+  </article>
+  <article class="card">
+    <h3>Audit Lab</h3>
+    <p>Run diagnostics and patch-generation workflows.</p>
+    <a href="/audit">Open Audit</a>
+  </article>
+  <article class="card">
+    <h3>Legacy Dashboard</h3>
+    <p>Original internal summary page.</p>
+    <a href="/advance/dashboard">Open Legacy Dashboard</a>
+  </article>
+</section>
+{% endblock %}

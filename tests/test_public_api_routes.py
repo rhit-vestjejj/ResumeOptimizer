@@ -29,3 +29,13 @@ def test_audit_routes_exist() -> None:
     }
     actual = {route.path for route in app.routes}
     assert expected.issubset(actual)
+
+
+def test_mvp_surface_routes_exist() -> None:
+    expected = {
+        '/',
+        '/generate',
+        '/advance',
+    }
+    actual = {route.path for route in app.routes}
+    assert expected.issubset(actual)
