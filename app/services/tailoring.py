@@ -15,6 +15,7 @@ from app.models import (
     Identity,
     JDAnalysis,
     ProjectEntry,
+    RequiredSkillEvidence,
     SelectedItem,
     Skills,
     TailorMode,
@@ -812,6 +813,89 @@ def _selected_required_coverage(selected: Sequence[Tuple[CandidateSource, float]
     for candidate_source, _ in selected:
         covered.update(_candidate_token_set(candidate_source.candidate))
     return len(covered & required_terms) / max(1, len(required_terms))
+
+
+def _ordered_required_terms(required_terms: Set[str], jd: JDAnalysis) -> List[str]:
+    ordered: List[str] = []
+    for term in _canonicalize_terms(tokenize(' '.join(jd.required_skills))):
+        if term in required_terms and term not in ordered:
+            ordered.append(term)
+    for term in sorted(required_terms):
+        if term not in ordered:
+            ordered.append(term)
+    return ordered
+
+
+def _collect_resume_bullet_sources(
+    resume: CanonicalResume,
+    score_lookup: Dict[str, float],
+) -> List[Tuple[str, str, float, List[str]]]:
+    sources: List[Tuple[str, str, float, List[str]]] = []
+
+    for entry in resume.experience:
+        bullets = [bullet.strip() for bullet in entry.bullets if bullet and bullet.strip()]
+        if not bullets:
+            continue
+        role_company_key = normalize_token(f'{entry.title}-{entry.company}')
+        title_key = normalize_token(entry.title)
+        score = max(score_lookup.get(role_company_key, 0.0), score_lookup.get(title_key, 0.0))
+        if entry.company.strip():
+            source_title = f'{entry.title} at {entry.company}'
+        else:
+            source_title = entry.title
+        sources.append(('experience', source_title, float(score), bullets))
+
+    for project in resume.projects:
+        bullets = [bullet.strip() for bullet in project.bullets if bullet and bullet.strip()]
+        if not bullets:
+            continue
+        title_key = normalize_token(project.name)
+        score = score_lookup.get(title_key, 0.0)
+        sources.append(('project', project.name, float(score), bullets))
+
+    return sorted(sources, key=lambda source: source[2], reverse=True)
+
+
+def _first_matching_bullet(required_term: str, bullets: Sequence[str]) -> Optional[str]:
+    for bullet in bullets:
+        bullet_terms = set(_canonicalize_terms(tokenize(bullet)))
+        if required_term in bullet_terms:
+            return bullet.strip()
+    return None
+
+
+def _build_required_skill_evidence_map(
+    *,
+    required_terms: Set[str],
+    jd: JDAnalysis,
+    bullet_sources: Sequence[Tuple[str, str, float, List[str]]],
+) -> List[RequiredSkillEvidence]:
+    if not required_terms:
+        return []
+
+    ordered_required_terms = _ordered_required_terms(required_terms, jd)
+    evidence_map: List[RequiredSkillEvidence] = []
+    for required_term in ordered_required_terms:
+        matched = False
+        for source_type, source_title, _, bullets in bullet_sources:
+            matched_bullet = _first_matching_bullet(required_term, bullets)
+            if not matched_bullet:
+                continue
+            evidence_map.append(
+                RequiredSkillEvidence(
+                    required_term=required_term,
+                    has_evidence=True,
+                    source_title=source_title,
+                    source_type=source_type,
+                    evidence_bullet=matched_bullet,
+                )
+            )
+            matched = True
+            break
+        if not matched:
+            evidence_map.append(RequiredSkillEvidence(required_term=required_term))
+
+    return evidence_map
 
 
 def _ordered_overlap_terms(overlap_terms: Set[str], jd_phrases: Sequence[str], limit: int = 3) -> List[str]:
@@ -1623,6 +1707,12 @@ def tailor_resume(
 
     tailored = prune_resume_for_one_page(tailored, score_lookup, warnings)
     tailored = _ensure_target_summary(tailored, jd, jd_text, job_title_hint)
+    bullet_sources = _collect_resume_bullet_sources(tailored, score_lookup)
+    required_skill_evidence_map = _build_required_skill_evidence_map(
+        required_terms=required_terms,
+        jd=jd,
+        bullet_sources=bullet_sources,
+    )
 
     required_coverage = _selected_required_coverage(selected, required_terms) if required_terms else 1.0
     if required_terms:
@@ -1650,6 +1740,7 @@ def tailor_resume(
         chosen_items=selected_items,
         vault_relevance=vault_relevance,
         missing_required_evidence=missing_required_evidence,
+        required_skill_evidence_map=required_skill_evidence_map,
         keywords_covered=sorted(covered),
         keywords_missed=missed,
         warnings=unique_preserve_order(warnings),

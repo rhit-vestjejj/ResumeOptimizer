@@ -143,7 +143,7 @@ This is your differentiator over generic resume rewriters.
 
 ⸻
 
-Step 7: Add One Killer UX Feature
+Step 7: Add One Killer UX Feature [COMPLETE - 2026-03-02]
 
 One feature that makes this feel different:
 
@@ -154,6 +154,11 @@ For each required skill:
 	•	Or show “no evidence”
 
 That builds trust immediately.
+
+Implemented:
+	•	Result page now includes an Evidence Map section.
+	•	Each required term maps to a selected resume bullet when present.
+	•	Missing proof is explicitly shown as “No evidence in selected bullets.”
 
 ⸻
 
@@ -235,16 +240,23 @@ That positioning is:
 What You Should Do This Month
 
 Week 1:
-Fix reliability bugs + packaging.
+Ship installability:
+	•	Dockerfile
+	•	docker-compose
+	•	one-command setup docs
 
 Week 2:
-Unify scoring logic.
+Trim non-revenue complexity:
+	•	Hide advanced knobs by default
+	•	Remove low-value tuning paths from MVP flow
 
 Week 3:
-Replace YAML UI with simple forms.
+Run paid beta:
+	•	Launch to 30 students
+	•	3 free uses, then $15/month
 
 Week 4:
-Launch small beta + collect feedback.
+Iterate on conversion blockers from beta feedback.
 
 No new features until revenue signal.
 

@@ -181,10 +181,19 @@ class VaultRelevanceItem(StrictModel):
     missing_required_terms: List[str] = Field(default_factory=list)
 
 
+class RequiredSkillEvidence(StrictModel):
+    required_term: str
+    has_evidence: bool = False
+    source_title: str = ''
+    source_type: str = ''
+    evidence_bullet: str = ''
+
+
 class TailorReport(StrictModel):
     chosen_items: List[SelectedItem] = Field(default_factory=list)
     vault_relevance: List[VaultRelevanceItem] = Field(default_factory=list)
     missing_required_evidence: List[str] = Field(default_factory=list)
+    required_skill_evidence_map: List[RequiredSkillEvidence] = Field(default_factory=list)
     keywords_covered: List[str] = Field(default_factory=list)
     keywords_missed: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)

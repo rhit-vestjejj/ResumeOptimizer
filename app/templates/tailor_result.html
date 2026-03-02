@@ -42,6 +42,23 @@
   {% if missing_required_evidence_display %}
     <p class="warn-text">This JD requires evidence you do not currently have in your vault: {{ missing_required_evidence_display | join(', ') }}</p>
   {% endif %}
+  <h3>Evidence Map</h3>
+  <ul>
+    {% for evidence in required_skill_evidence_map %}
+      <li>
+        <strong>{{ evidence.required_term_display }}</strong>
+        {% if evidence.has_evidence %}
+          <br /><span class="muted">{{ evidence.source_title }}{% if evidence.source_type_display %} ({{ evidence.source_type_display }}){% endif %}</span>
+          <br /><span class="muted">{{ evidence.evidence_bullet }}</span>
+        {% else %}
+          <br /><span class="warn-text">No evidence in selected bullets.</span>
+        {% endif %}
+      </li>
+    {% endfor %}
+    {% if not required_skill_evidence_map %}
+      <li>No required skills extracted from this JD.</li>
+    {% endif %}
+  </ul>
   <ul>
     {% for item in vault_relevance %}
       <li>

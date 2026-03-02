@@ -1072,6 +1072,9 @@ def _run_tailoring_workflow(
         'chosen_items': [item.model_dump(mode='json') for item in tailored.report.chosen_items],
         'vault_relevance': [item.model_dump(mode='json') for item in tailored.report.vault_relevance],
         'missing_required_evidence': list(tailored.report.missing_required_evidence),
+        'required_skill_evidence_map': [
+            item.model_dump(mode='json') for item in tailored.report.required_skill_evidence_map
+        ],
         'job_id': job_id,
         'timestamp': output_dir.name,
         'pdf_exists': pdf_exists,
@@ -1117,6 +1120,18 @@ def _tailor_result_context(
                 formatted.append(display)
         return formatted
 
+    def _format_source_type(source_type: str) -> str:
+        normalized = normalize_token(source_type)
+        if not normalized:
+            return ''
+        if normalized in {'experience', 'job', 'vaultjob'}:
+            return 'Work'
+        if normalized in {'coursework', 'vaultcoursework'}:
+            return 'Coursework'
+        if normalized in {'award', 'vaultaward'}:
+            return 'Award'
+        return 'Project'
+
     warnings: list[str] = []
     seen: set[str] = set()
     for warning in [*(prepended_warnings or []), *workflow['warnings']]:
@@ -1134,6 +1149,12 @@ def _tailor_result_context(
         vault_relevance.append(item)
 
     missing_required_evidence_display = _format_skill_terms(workflow['missing_required_evidence'])
+    required_skill_evidence_map: list[Dict[str, Any]] = []
+    for raw_item in workflow.get('required_skill_evidence_map', []):
+        item = dict(raw_item)
+        item['required_term_display'] = _format_skill_term(str(item.get('required_term', '')))
+        item['source_type_display'] = _format_source_type(str(item.get('source_type', '')))
+        required_skill_evidence_map.append(item)
 
     return {
         'job': job,
@@ -1154,6 +1175,7 @@ def _tailor_result_context(
         'vault_relevance': vault_relevance,
         'missing_required_evidence': workflow['missing_required_evidence'],
         'missing_required_evidence_display': missing_required_evidence_display,
+        'required_skill_evidence_map': required_skill_evidence_map,
         'keywords_covered': workflow['keywords_covered'],
         'keywords_missed': workflow['keywords_missed'],
     }

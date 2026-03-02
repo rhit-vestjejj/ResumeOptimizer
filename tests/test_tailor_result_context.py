@@ -34,6 +34,22 @@ def test_tailor_result_context_formats_missing_evidence_terms_for_display() -> N
             }
         ],
         'missing_required_evidence': ['ml', 'sql', 'xgboost', 'computer-vision', 'ml'],
+        'required_skill_evidence_map': [
+            {
+                'required_term': 'postgresql',
+                'has_evidence': True,
+                'source_title': 'Backend Intern at Example',
+                'source_type': 'experience',
+                'evidence_bullet': 'Built PostgreSQL-backed APIs with Python.',
+            },
+            {
+                'required_term': 'kubernetes',
+                'has_evidence': False,
+                'source_title': '',
+                'source_type': '',
+                'evidence_bullet': '',
+            },
+        ],
         'keywords_covered': [],
         'keywords_missed': [],
     }
@@ -43,3 +59,6 @@ def test_tailor_result_context_formats_missing_evidence_terms_for_display() -> N
     assert context['missing_required_evidence_display'] == ['Machine Learning', 'SQL', 'XGBoost', 'Computer Vision']
     assert context['vault_relevance'][0]['matched_required_terms_display'] == ['Machine Learning', 'SQL', 'AWS']
     assert context['vault_relevance'][0]['missing_required_terms_display'] == ['XGBoost']
+    assert context['required_skill_evidence_map'][0]['required_term_display'] == 'PostgreSQL'
+    assert context['required_skill_evidence_map'][0]['source_type_display'] == 'Work'
+    assert context['required_skill_evidence_map'][1]['required_term_display'] == 'Kubernetes'

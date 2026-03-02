@@ -76,6 +76,13 @@ def test_tailor_integration_both_modes_and_render(tmp_path: Path) -> None:
         if unselected_vault_items:
             assert all(item.why_not_selected for item in unselected_vault_items)
         assert isinstance(result.report.missing_required_evidence, list)
+        required_terms = {item.required_term for item in result.report.required_skill_evidence_map}
+        assert required_terms == {'python', 'fastapi', 'postgresql', 'docker'}
+        for evidence in result.report.required_skill_evidence_map:
+            assert evidence.required_term
+            if evidence.has_evidence:
+                assert evidence.source_title
+                assert evidence.evidence_bullet
         assert len(result.tailored_resume.projects) <= MAX_PROJECT_ITEMS
         assert result.tailored_resume.summary is not None
         assert 'Machine Learning Engineer' in result.tailored_resume.summary
