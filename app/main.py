@@ -68,6 +68,25 @@ templates = Jinja2Templates(directory='app/templates')
 DEFAULT_TAILOR_MODE = TailorMode.HARD_TRUTH
 DEFAULT_TARGET_MATCH_SCORE = 82.0
 DEFAULT_MAX_OPTIMIZATION_PASSES = 5
+TERM_DISPLAY_OVERRIDES: Dict[str, str] = {
+    'ml': 'Machine Learning',
+    'ai': 'AI',
+    'llm': 'LLM',
+    'nlp': 'NLP',
+    'sql': 'SQL',
+    'api': 'API',
+    'etl': 'ETL',
+    'aws': 'AWS',
+    'gcp': 'GCP',
+    'dbt': 'dbt',
+    'xgboost': 'XGBoost',
+    'pytorch': 'PyTorch',
+    'tensorflow': 'TensorFlow',
+    'postgresql': 'PostgreSQL',
+    'kafka': 'Kafka',
+    'sklearn': 'scikit-learn',
+}
+UPPERCASE_DISPLAY_TERMS = {'ai', 'llm', 'nlp', 'sql', 'api', 'etl', 'aws', 'gcp', 'dbt'}
 
 
 def render(request: Request, template_name: str, context: Dict[str, Any]) -> HTMLResponse:
@@ -1051,6 +1070,8 @@ def _run_tailoring_workflow(
         'keywords_covered': list(tailored.report.keywords_covered),
         'keywords_missed': list(tailored.report.keywords_missed),
         'chosen_items': [item.model_dump(mode='json') for item in tailored.report.chosen_items],
+        'vault_relevance': [item.model_dump(mode='json') for item in tailored.report.vault_relevance],
+        'missing_required_evidence': list(tailored.report.missing_required_evidence),
         'job_id': job_id,
         'timestamp': output_dir.name,
         'pdf_exists': pdf_exists,
@@ -1072,6 +1093,30 @@ def _tailor_result_context(
     workflow: Dict[str, Any],
     prepended_warnings: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
+    def _format_skill_term(term: str) -> str:
+        cleaned = str(term or '').strip()
+        if not cleaned:
+            return ''
+        normalized = normalize_token(cleaned)
+        if not normalized:
+            return cleaned
+        if normalized in TERM_DISPLAY_OVERRIDES:
+            return TERM_DISPLAY_OVERRIDES[normalized]
+        original_parts = [normalize_token(part) for part in re.split(r'[\s_-]+', cleaned) if normalize_token(part)]
+        parts = original_parts if len(original_parts) > 1 else [normalized]
+        if not parts:
+            return cleaned
+        display_parts = [part.upper() if part in UPPERCASE_DISPLAY_TERMS else part.capitalize() for part in parts]
+        return ' '.join(display_parts)
+
+    def _format_skill_terms(terms: Any) -> list[str]:
+        formatted: list[str] = []
+        for term in terms or []:
+            display = _format_skill_term(str(term))
+            if display and display not in formatted:
+                formatted.append(display)
+        return formatted
+
     warnings: list[str] = []
     seen: set[str] = set()
     for warning in [*(prepended_warnings or []), *workflow['warnings']]:
@@ -1080,6 +1125,16 @@ def _tailor_result_context(
             continue
         seen.add(cleaned)
         warnings.append(cleaned)
+
+    vault_relevance: list[Dict[str, Any]] = []
+    for raw_item in workflow['vault_relevance']:
+        item = dict(raw_item)
+        item['matched_required_terms_display'] = _format_skill_terms(item.get('matched_required_terms', []))
+        item['missing_required_terms_display'] = _format_skill_terms(item.get('missing_required_terms', []))
+        vault_relevance.append(item)
+
+    missing_required_evidence_display = _format_skill_terms(workflow['missing_required_evidence'])
+
     return {
         'job': job,
         'mode': mode,
@@ -1096,6 +1151,9 @@ def _tailor_result_context(
         'passes_used': workflow['passes_used'],
         'max_passes': workflow['max_passes'],
         'chosen_items': workflow['chosen_items'],
+        'vault_relevance': vault_relevance,
+        'missing_required_evidence': workflow['missing_required_evidence'],
+        'missing_required_evidence_display': missing_required_evidence_display,
         'keywords_covered': workflow['keywords_covered'],
         'keywords_missed': workflow['keywords_missed'],
     }

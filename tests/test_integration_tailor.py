@@ -66,6 +66,16 @@ def test_tailor_integration_both_modes_and_render(tmp_path: Path) -> None:
         assert result.report.chosen_items
         assert all(item.why_included for item in result.report.chosen_items)
         assert all(item.why_included.startswith('Selected as ') for item in result.report.chosen_items)
+        assert result.report.vault_relevance
+        assert all(item.item_id for item in result.report.vault_relevance)
+        assert all(item.relevance_score >= 0 for item in result.report.vault_relevance)
+        selected_vault_items = [item for item in result.report.vault_relevance if item.selected]
+        assert selected_vault_items
+        assert all(item.why_selected.startswith('Selected as ') for item in selected_vault_items)
+        unselected_vault_items = [item for item in result.report.vault_relevance if not item.selected]
+        if unselected_vault_items:
+            assert all(item.why_not_selected for item in unselected_vault_items)
+        assert isinstance(result.report.missing_required_evidence, list)
         assert len(result.tailored_resume.projects) <= MAX_PROJECT_ITEMS
         assert result.tailored_resume.summary is not None
         assert 'Machine Learning Engineer' in result.tailored_resume.summary

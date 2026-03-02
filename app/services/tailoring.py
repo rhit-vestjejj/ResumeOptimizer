@@ -19,6 +19,7 @@ from app.models import (
     Skills,
     TailorMode,
     TailorReport,
+    VaultRelevanceItem,
     VaultItem,
     VaultItemType,
 )
@@ -1338,6 +1339,166 @@ def _collect_known_terms(candidates: Sequence[CandidateSource], jd: JDAnalysis) 
     return {term for term in terms if len(term) > 1}
 
 
+def _vault_item_term_set(item: VaultItem) -> Set[str]:
+    bullet_text = ' '.join(bullet.text for bullet in item.bullets if bullet.text.strip())
+    raw_tokens = tokenize(' '.join([item.title, *item.tags, *item.tech, bullet_text]))
+    return set(_canonicalize_terms(raw_tokens))
+
+
+def _ineligible_vault_reason(item: VaultItem) -> str:
+    if item.type == VaultItemType.skillset:
+        return 'Skillset entries are not selected directly; they need project or work evidence.'
+
+    if item.type in {VaultItemType.project, VaultItemType.club, VaultItemType.other, VaultItemType.coursework}:
+        bullet_count = len([bullet for bullet in item.bullets if bullet.text.strip()])
+        if bullet_count < MIN_PROJECT_BULLETS:
+            return f'Needs at least {MIN_PROJECT_BULLETS} bullets before it can be considered.'
+
+    return 'Item was not eligible for scoring in this run.'
+
+
+def _unselected_vault_reason(
+    *,
+    candidate_source: CandidateSource,
+    score: float,
+    required_terms: Set[str],
+    selected_required_terms: Set[str],
+    selected_experience: Sequence[Tuple[CandidateSource, float]],
+    selected_projects: Sequence[Tuple[CandidateSource, float]],
+    selected_coursework: Sequence[Tuple[CandidateSource, float]],
+    exp_limit: int,
+    project_limit: int,
+) -> str:
+    candidate_terms = _candidate_token_set(candidate_source.candidate)
+    required_hits = candidate_terms & required_terms
+    score_text = f'{score:.2f}'
+
+    if score <= 0:
+        return f'ATS relevance score was {score_text}; stronger evidence was needed.'
+
+    if required_terms and not required_hits:
+        return 'No overlap with must-have JD terms, so higher-coverage items were prioritized.'
+
+    if _is_experience_candidate(candidate_source) and selected_experience and len(selected_experience) >= exp_limit:
+        floor = min(selected_score for _, selected_score in selected_experience)
+        if score <= floor:
+            return f'Experience slots are capped at {exp_limit}; higher-scoring work evidence was selected.'
+
+    if _is_project_candidate(candidate_source) and selected_projects and len(selected_projects) >= project_limit:
+        floor = min(selected_score for _, selected_score in selected_projects)
+        if score <= floor:
+            return f'Project slots are capped at {project_limit}; higher-scoring projects were selected.'
+
+    if _is_coursework_candidate(candidate_source) and selected_coursework:
+        top_coursework = max(selected_score for _, selected_score in selected_coursework)
+        if score <= top_coursework:
+            return 'Only one coursework item is retained, and another coursework item scored higher.'
+
+    if required_terms:
+        selected_only_terms = selected_required_terms - required_hits
+        if selected_only_terms:
+            top_terms = ', '.join(sorted(selected_only_terms)[:3])
+            return f'Must-have coverage optimization favored other items (for example: {top_terms}).'
+
+    return 'Lower relative relevance than the selected evidence set.'
+
+
+def _build_vault_relevance_view(
+    *,
+    vault_items: Sequence[Tuple[str, VaultItem]],
+    scored: Sequence[Tuple[CandidateSource, float]],
+    selected: Sequence[Tuple[CandidateSource, float]],
+    required_terms: Set[str],
+    jd: JDAnalysis,
+    selected_reason_by_source_id: Dict[str, str],
+) -> Tuple[List[VaultRelevanceItem], List[str]]:
+    selected_source_ids = {candidate_source.candidate.source_id for candidate_source, _ in selected}
+    selected_required_terms: Set[str] = set()
+    for candidate_source, _ in selected:
+        selected_required_terms.update(_candidate_token_set(candidate_source.candidate) & required_terms)
+
+    scored_by_item_id: Dict[str, Tuple[CandidateSource, float]] = {}
+    for candidate_source, score in scored:
+        if str(candidate_source.origin.get('kind', '')) != 'vault':
+            continue
+        item_id = str(candidate_source.origin.get('item_id', '')).strip()
+        if not item_id:
+            continue
+        previous = scored_by_item_id.get(item_id)
+        if previous is None or score > previous[1]:
+            scored_by_item_id[item_id] = (candidate_source, score)
+
+    selected_experience = [pair for pair in selected if _is_experience_candidate(pair[0])]
+    selected_projects = [pair for pair in selected if _is_project_candidate(pair[0])]
+    selected_coursework = [pair for pair in selected if _is_coursework_candidate(pair[0])]
+    available_projects = len(
+        [
+            pair
+            for pair in scored
+            if _is_project_candidate(pair[0]) and len(pair[0].candidate.bullets) >= MIN_PROJECT_BULLETS
+        ]
+    )
+    exp_limit, project_limit = _selection_limits(jd, available_projects=available_projects)
+
+    vault_evidence_terms: Set[str] = set()
+    relevance_items: List[VaultRelevanceItem] = []
+    for item_id, item in vault_items:
+        item_terms = _vault_item_term_set(item)
+        vault_evidence_terms.update(item_terms)
+        matched_required = sorted(item_terms & required_terms)
+        missing_required = sorted(required_terms - item_terms) if required_terms else []
+
+        scored_entry = scored_by_item_id.get(item_id)
+        if scored_entry is None:
+            relevance_items.append(
+                VaultRelevanceItem(
+                    item_id=item_id,
+                    title=item.title,
+                    item_type=item.type.value,
+                    relevance_score=0.0,
+                    selected=False,
+                    why_not_selected=_ineligible_vault_reason(item),
+                    matched_required_terms=matched_required,
+                    missing_required_terms=missing_required,
+                )
+            )
+            continue
+
+        candidate_source, score = scored_entry
+        source_id = candidate_source.candidate.source_id
+        is_selected = source_id in selected_source_ids
+        relevance_items.append(
+            VaultRelevanceItem(
+                item_id=item_id,
+                title=item.title,
+                item_type=item.type.value,
+                relevance_score=round(float(score), 3),
+                selected=is_selected,
+                why_selected=selected_reason_by_source_id.get(source_id, '') if is_selected else '',
+                why_not_selected='' if is_selected else _unselected_vault_reason(
+                    candidate_source=candidate_source,
+                    score=score,
+                    required_terms=required_terms,
+                    selected_required_terms=selected_required_terms,
+                    selected_experience=selected_experience,
+                    selected_projects=selected_projects,
+                    selected_coursework=selected_coursework,
+                    exp_limit=exp_limit,
+                    project_limit=project_limit,
+                ),
+                matched_required_terms=matched_required,
+                missing_required_terms=missing_required,
+            )
+        )
+
+    missing_required_evidence = sorted(required_terms - vault_evidence_terms) if required_terms else []
+    relevance_items = sorted(
+        relevance_items,
+        key=lambda item: (-int(item.selected), -item.relevance_score, item.title.lower()),
+    )
+    return relevance_items, missing_required_evidence
+
+
 def tailor_resume(
     *,
     base_resume: CanonicalResume,
@@ -1365,6 +1526,10 @@ def tailor_resume(
 
     selected = _select_top_candidates(scored, jd, optimization_level=optimization_level)
     required_terms = _required_must_have_terms(jd)
+    selected_reason_by_source_id = {
+        candidate_source.candidate.source_id: _build_selection_reason(candidate_source, jd, required_terms)
+        for candidate_source, _ in selected
+    }
     score_lookup: Dict[str, float] = {}
     for candidate_source, score in selected:
         candidate = candidate_source.candidate
@@ -1452,7 +1617,7 @@ def tailor_resume(
                 source_id=candidate.source_id,
                 title=candidate.title,
                 score=score,
-                why_included=_build_selection_reason(candidate_source, jd, required_terms),
+                why_included=selected_reason_by_source_id.get(candidate.source_id, ''),
             )
         )
 
@@ -1472,9 +1637,19 @@ def tailor_resume(
     covered = _covered_keywords(jd, tailored)
     required_keywords = unique_preserve_order(tokenize(' '.join(jd.required_skills + jd.target_role_keywords)))
     missed = [term for term in required_keywords if term not in covered]
+    vault_relevance, missing_required_evidence = _build_vault_relevance_view(
+        vault_items=vault_items,
+        scored=scored,
+        selected=selected,
+        required_terms=required_terms,
+        jd=jd,
+        selected_reason_by_source_id=selected_reason_by_source_id,
+    )
 
     report = TailorReport(
         chosen_items=selected_items,
+        vault_relevance=vault_relevance,
+        missing_required_evidence=missing_required_evidence,
         keywords_covered=sorted(covered),
         keywords_missed=missed,
         warnings=unique_preserve_order(warnings),

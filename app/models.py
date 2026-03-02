@@ -169,8 +169,22 @@ class SelectedItem(StrictModel):
     why_included: str = ''
 
 
+class VaultRelevanceItem(StrictModel):
+    item_id: str
+    title: str
+    item_type: str
+    relevance_score: float
+    selected: bool = False
+    why_selected: str = ''
+    why_not_selected: str = ''
+    matched_required_terms: List[str] = Field(default_factory=list)
+    missing_required_terms: List[str] = Field(default_factory=list)
+
+
 class TailorReport(StrictModel):
     chosen_items: List[SelectedItem] = Field(default_factory=list)
+    vault_relevance: List[VaultRelevanceItem] = Field(default_factory=list)
+    missing_required_evidence: List[str] = Field(default_factory=list)
     keywords_covered: List[str] = Field(default_factory=list)
     keywords_missed: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)

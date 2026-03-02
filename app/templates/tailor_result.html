@@ -38,6 +38,34 @@
       <li>No evidence items reported.</li>
     {% endif %}
   </ul>
+  <h3>Vault Relevance</h3>
+  {% if missing_required_evidence_display %}
+    <p class="warn-text">This JD requires evidence you do not currently have in your vault: {{ missing_required_evidence_display | join(', ') }}</p>
+  {% endif %}
+  <ul>
+    {% for item in vault_relevance %}
+      <li>
+        <strong>{{ item.title }}</strong> ({{ item.item_type }}) - relevance {{ item.relevance_score }}
+        {% if item.selected %}
+          <br /><span class="muted">Selected.</span>
+          {% if item.why_selected %}
+            <br /><span class="muted">{{ item.why_selected }}</span>
+          {% endif %}
+        {% else %}
+          <br /><span class="muted">Not selected.</span>
+          {% if item.why_not_selected %}
+            <br /><span class="muted">{{ item.why_not_selected }}</span>
+          {% endif %}
+        {% endif %}
+        {% if item.matched_required_terms_display %}
+          <br /><span class="muted">Must-have terms covered: {{ item.matched_required_terms_display | join(', ') }}</span>
+        {% endif %}
+      </li>
+    {% endfor %}
+    {% if not vault_relevance %}
+      <li>No vault items available for relevance analysis.</li>
+    {% endif %}
+  </ul>
   <h3>Keywords Covered</h3>
   <p>
     {% if keywords_covered %}
