@@ -1,0 +1,15 @@
+case_id: frontend_react_engineer
+description: Frontend role should elevate React dashboard evidence while retaining strongest transferable projects.
+base_resume_path: ../fixtures/base.yaml
+vault_items_dir: ../fixtures/vault/items
+jd_text_path: ../jds/frontend_react_engineer.txt
+expected_selected_ids:
+  - frontend_dashboard
+  - backend_payments
+must_cover_terms:
+  - react
+  - typescript
+must_not_claim_terms:
+  - xgboost
+mode: HARD_TRUTH
+selection_window: 3

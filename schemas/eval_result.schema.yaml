@@ -1,0 +1,86 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: SelectionBenchmarkResult
+type: object
+additionalProperties: false
+required:
+  - generated_at
+  - thresholds
+  - aggregate
+  - cases
+  - aggregate_passes
+properties:
+  generated_at:
+    type: string
+  thresholds:
+    type: object
+    additionalProperties:
+      type: number
+  aggregate:
+    type: object
+    additionalProperties: true
+    required:
+      - case_count
+      - precision_mean
+      - recall_mean
+      - f1_mean
+      - required_term_coverage_mean
+      - unsupported_claim_rate_mean
+      - unsupported_claim_rate_max
+    properties:
+      case_count:
+        type: integer
+        minimum: 0
+      precision_mean:
+        type: number
+      recall_mean:
+        type: number
+      f1_mean:
+        type: number
+      required_term_coverage_mean:
+        type: number
+      unsupported_claim_rate_mean:
+        type: number
+      unsupported_claim_rate_max:
+        type: number
+      top_false_positives:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [source_id, count]
+          properties:
+            source_id: {type: string}
+            count: {type: integer, minimum: 1}
+      top_false_negatives:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [source_id, count]
+          properties:
+            source_id: {type: string}
+            count: {type: integer, minimum: 1}
+  cases:
+    type: array
+    items:
+      type: object
+      additionalProperties: true
+      required:
+        - case_id
+        - precision
+        - recall
+        - f1
+        - required_term_coverage
+        - unsupported_claim_rate
+      properties:
+        case_id: {type: string}
+        precision: {type: number}
+        recall: {type: number}
+        f1: {type: number}
+        required_term_coverage: {type: number}
+        unsupported_claim_rate: {type: number}
+        passes_thresholds: {type: boolean}
+  aggregate_passes:
+    type: boolean
+  output_path:
+    type: string

@@ -12,6 +12,7 @@ from app.models import (
     DateRange,
     EducationEntry,
     ExperienceEntry,
+    HighConfidenceExclusion,
     Identity,
     JDAnalysis,
     ProjectEntry,
@@ -32,6 +33,7 @@ STOPWORDS = {
     'and', 'or', 'with', 'for', 'the', 'you', 'your', 'our', 'are', 'will', 'from', 'that', 'have', 'has',
     'this', 'their', 'they', 'job', 'role', 'about', 'using', 'work', 'team', 'years', 'year', 'plus',
     'required', 'preferred', 'responsibilities', 'experience', 'ability', 'strong', 'skills', 'skill',
+    'in', 'on', 'to', 'of', 'at', 'by', 'as', 'into', 'across',
 }
 
 GENERIC_TERMS = {
@@ -73,6 +75,13 @@ PROFILE_TERMS: Dict[str, Set[str]] = {
     'backend': {
         'backend', 'api', 'microservice', 'microservices', 'distributed', 'scalable', 'kubernetes', 'docker',
         'postgresql', 'sql', 'service', 'services',
+    },
+    'frontend': {
+        'frontend', 'react', 'typescript', 'javascript', 'css', 'ui', 'ux', 'web', 'accessibility', 'dashboard',
+    },
+    'it_support': {
+        'it', 'support', 'ticket', 'tickets', 'jira', 'servicenow', 'powershell', 'troubleshooting', 'runbook',
+        'incident', 'automation', 'documentation',
     },
 }
 
@@ -129,6 +138,7 @@ MAX_EXP_ITEMS = 3
 MAX_PROJECT_ITEMS = 4
 MIN_PROJECT_ITEMS = 3
 MAX_BULLETS_PER_ITEM = 3
+PROJECT_BULLET_TARGET = 3
 MAX_TOTAL_BULLETS = 12
 MAX_PAGE_UNITS = 41
 MIN_PROJECT_BULLETS = 2
@@ -591,14 +601,19 @@ def _extract_top_keywords(text: str, limit: int = 20) -> List[str]:
     return [term for term, _ in ranked[:limit]]
 
 
-def build_candidate_pool(base: CanonicalResume, vault_items: Sequence[Tuple[str, VaultItem]]) -> List[CandidateSource]:
+def build_candidate_pool(
+    base: CanonicalResume,
+    vault_items: Sequence[Tuple[str, VaultItem]],
+    *,
+    allow_base_fallback: bool = False,
+) -> List[CandidateSource]:
     vault_candidates = _build_vault_candidates(vault_items)
     vault_content = [
         candidate
         for candidate in vault_candidates
         if candidate.candidate.source_type not in {'vault:award', 'vault:skillset'}
     ]
-    if vault_content:
+    if vault_content or not allow_base_fallback:
         return vault_candidates
 
     # Fallback for legacy behavior when vault is empty.
@@ -1166,6 +1181,166 @@ def score_candidate_item(
     return round(max(0.0, score), 3)
 
 
+def _candidate_match_terms(candidate: CandidateItem, context: ScoringContext) -> Dict[str, List[str]]:
+    candidate_terms = _candidate_token_set(candidate)
+    def _quality_terms(terms: Set[str]) -> Set[str]:
+        return {
+            term for term in terms
+            if len(term) > 2 and term not in STOPWORDS and term not in GENERIC_TERMS
+        }
+
+    required_hits = sorted(_quality_terms(candidate_terms & context.required_tokens))
+    role_hits = sorted(_quality_terms((candidate_terms & context.role_tokens) - set(required_hits)))
+    responsibility_hits = sorted(
+        _quality_terms((candidate_terms & context.resp_tokens) - set(required_hits) - set(role_hits))
+    )
+    return {
+        'required': required_hits,
+        'role': role_hits,
+        'responsibility': responsibility_hits,
+    }
+
+
+def _profile_alignment_signal(candidate_terms: Set[str], jd_profile_hits: Dict[str, int]) -> float:
+    if not candidate_terms:
+        return 0.0
+    candidate_profile_hits = _profile_hit_counts(candidate_terms)
+    total = 0.0
+    for profile, jd_hits in jd_profile_hits.items():
+        if jd_hits <= 0:
+            continue
+        overlap = min(jd_hits, candidate_profile_hits.get(profile, 0))
+        if overlap <= 0:
+            continue
+        total += overlap / jd_hits
+    return round(total, 3)
+
+
+def _profile_mismatch_penalty(candidate_terms: Set[str], jd_profile_hits: Dict[str, int]) -> float:
+    if not candidate_terms:
+        return 0.0
+    candidate_profile_hits = _profile_hit_counts(candidate_terms)
+    profile_penalty_weights: Dict[str, float] = {
+        'ml_core': 0.6,
+        'agentic': 1.8,
+        'data_platform': 0.45,
+        'backend': 0.1,
+        'frontend': 0.45,
+        'it_support': 0.55,
+    }
+    penalty = 0.0
+    for profile, candidate_hits in candidate_profile_hits.items():
+        if candidate_hits <= 0:
+            continue
+        if jd_profile_hits.get(profile, 0) > 0:
+            continue
+        if candidate_hits >= 2:
+            weight = profile_penalty_weights.get(profile, 0.4)
+            penalty += min(2.8, candidate_hits * weight)
+    return round(penalty, 3)
+
+
+def _candidate_score_breakdown(
+    *,
+    candidate: CandidateItem,
+    context: ScoringContext,
+    ats_score: float,
+) -> Dict[str, float]:
+    candidate_terms = _candidate_token_set(candidate)
+    required_signal = _weighted_overlap(candidate_terms, context.required_tokens, context.token_weights)
+    role_signal = _weighted_overlap(candidate_terms, context.role_tokens, context.token_weights)
+    responsibility_signal = _weighted_overlap(candidate_terms, context.resp_tokens, context.token_weights)
+    phrase_signal = _weighted_phrase_score(candidate_terms, context.phrases, context.token_weights)
+    strict_required_hits = len(candidate_terms & context.strict_required_tokens)
+    evidence_density = min(4.0, len([bullet for bullet in candidate.bullets if bullet.strip()]) * 0.8)
+    profile_alignment = _profile_alignment_signal(candidate_terms, context.jd_profile_hits)
+    profile_mismatch_penalty = _profile_mismatch_penalty(candidate_terms, context.jd_profile_hits)
+
+    return {
+        'ats_score': round(float(ats_score), 3),
+        'required_signal': round(required_signal, 3),
+        'role_signal': round(role_signal, 3),
+        'responsibility_signal': round(responsibility_signal, 3),
+        'phrase_signal': round(phrase_signal, 3),
+        'strict_required_hits': float(strict_required_hits),
+        'evidence_density': round(evidence_density, 3),
+        'profile_alignment': profile_alignment,
+        'profile_mismatch_penalty': profile_mismatch_penalty,
+    }
+
+
+def _blended_candidate_score(breakdown: Dict[str, float]) -> float:
+    ats_score = float(breakdown.get('ats_score', 0.0) or 0.0)
+    required_signal = max(0.0, float(breakdown.get('required_signal', 0.0) or 0.0))
+    role_signal = max(0.0, float(breakdown.get('role_signal', 0.0) or 0.0))
+    responsibility_signal = max(0.0, float(breakdown.get('responsibility_signal', 0.0) or 0.0))
+    strict_hits = max(0.0, float(breakdown.get('strict_required_hits', 0.0) or 0.0))
+    phrase_signal = max(0.0, float(breakdown.get('phrase_signal', 0.0) or 0.0))
+    profile_alignment = max(0.0, float(breakdown.get('profile_alignment', 0.0) or 0.0))
+    profile_mismatch_penalty = max(0.0, float(breakdown.get('profile_mismatch_penalty', 0.0) or 0.0))
+    section_bias = float(breakdown.get('section_bias', 0.0) or 0.0)
+
+    # ATS score remains primary; deterministic overlap signals break near-ties.
+    boost = 0.0
+    boost += math.log1p(required_signal) * 1.5
+    boost += math.log1p(role_signal) * 0.85
+    boost += math.log1p(responsibility_signal) * 0.7
+    boost += strict_hits * 0.65
+    boost += min(2.0, phrase_signal * 0.12)
+    boost += profile_alignment * 0.35
+    boost -= profile_mismatch_penalty
+    boost += section_bias
+    return round(max(0.0, ats_score + boost), 3)
+
+
+def score_candidates_with_diagnostics(
+    candidates: Sequence[CandidateSource],
+    jd: JDAnalysis,
+    *,
+    jd_text: Optional[str] = None,
+    scoring_resume: Optional[CanonicalResume] = None,
+) -> Tuple[List[Tuple[CandidateSource, float]], Dict[str, Dict[str, object]]]:
+    active_jd_text = (jd_text or _jd_analysis_to_text(jd)).strip()
+    if not active_jd_text:
+        return [], {}
+    scoring_seed = _scoring_seed_resume(scoring_resume)
+    context = _build_scoring_context(jd, [candidate_source.candidate for candidate_source in candidates])
+
+    scored: List[Tuple[CandidateSource, float]] = []
+    diagnostics: Dict[str, Dict[str, object]] = {}
+    for candidate_source in candidates:
+        candidate = candidate_source.candidate
+        score = _ats_candidate_base_score(
+            candidate=candidate,
+            jd_text=active_jd_text,
+            scoring_seed=scoring_seed,
+            source_kind=str(candidate_source.origin.get('kind', '')),
+        )
+        ats_score = round(max(0.0, score), 3)
+        breakdown = _candidate_score_breakdown(candidate=candidate, context=context, ats_score=ats_score)
+        section = _candidate_section(candidate, source_kind=str(candidate_source.origin.get('kind', '')))
+        if section == 'coursework':
+            breakdown['section_bias'] = -2.0
+        elif section == 'experience':
+            breakdown['section_bias'] = 0.35
+        else:
+            breakdown['section_bias'] = 0.0
+        blended_score = _blended_candidate_score(breakdown)
+        scored.append((candidate_source, blended_score))
+
+        breakdown['blended_score'] = blended_score
+        match_terms = _candidate_match_terms(candidate, context)
+        diagnostics[candidate.source_id] = {
+            'matched_required_terms': match_terms['required'],
+            'matched_role_terms': match_terms['role'],
+            'matched_responsibility_terms': match_terms['responsibility'],
+            'score_breakdown': breakdown,
+        }
+
+    ranked = sorted(scored, key=lambda pair: (-pair[1], pair[0].candidate.title.lower()))
+    return ranked, diagnostics
+
+
 def score_candidates(
     candidates: Sequence[CandidateSource],
     jd: JDAnalysis,
@@ -1173,21 +1348,13 @@ def score_candidates(
     jd_text: Optional[str] = None,
     scoring_resume: Optional[CanonicalResume] = None,
 ) -> List[Tuple[CandidateSource, float]]:
-    active_jd_text = (jd_text or _jd_analysis_to_text(jd)).strip()
-    if not active_jd_text:
-        return []
-    scoring_seed = _scoring_seed_resume(scoring_resume)
-
-    scored: List[Tuple[CandidateSource, float]] = []
-    for candidate_source in candidates:
-        score = _ats_candidate_base_score(
-            candidate=candidate_source.candidate,
-            jd_text=active_jd_text,
-            scoring_seed=scoring_seed,
-            source_kind=str(candidate_source.origin.get('kind', '')),
-        )
-        scored.append((candidate_source, round(max(0.0, score), 3)))
-    return sorted(scored, key=lambda pair: (-pair[1], pair[0].candidate.title.lower()))
+    scored, _ = score_candidates_with_diagnostics(
+        candidates,
+        jd,
+        jd_text=jd_text,
+        scoring_resume=scoring_resume,
+    )
+    return scored
 
 
 def extract_metric_tokens(text: str) -> Set[str]:
@@ -1303,6 +1470,97 @@ def _aggressive_rephrase(bullet: str, jd_keywords: List[str]) -> str:
     return rewritten
 
 
+def _sentence_case(text: str) -> str:
+    cleaned = _normalize_spacing((text or '').strip(' ;,-'))
+    if not cleaned:
+        return ''
+    if cleaned[0].islower():
+        cleaned = cleaned[0].upper() + cleaned[1:]
+    if cleaned[-1] not in '.!?':
+        cleaned = f'{cleaned}.'
+    return cleaned
+
+
+def _project_intro_bullet(project_title: str, bullets: Sequence[str], tech: Sequence[str]) -> str:
+    candidates = [_sentence_case(bullet) for bullet in bullets if _sentence_case(bullet)]
+    non_metric = [bullet for bullet in candidates if not extract_metric_tokens(bullet)]
+    seed = non_metric[0] if non_metric else (candidates[0] if candidates else '')
+    if seed:
+        lowered = seed.rstrip('.')
+        lowered = re.sub(r'^(Built|Developed|Created|Implemented|Designed|Engineered|Shipped)\s+', '', lowered, flags=re.IGNORECASE)
+        lowered = lowered[:1].lower() + lowered[1:] if lowered else ''
+        intro = _sentence_case(f'Built {project_title} to {lowered}' if lowered else f'Built {project_title}.')
+        if intro:
+            return intro
+
+    tech_terms = [term for term in tech[:3] if term]
+    if tech_terms:
+        return _sentence_case(f'Built {project_title}, an end-to-end project using {", ".join(tech_terms)}')
+    return _sentence_case(f'Built {project_title}, an end-to-end project')
+
+
+def _format_project_bullet_pack(
+    *,
+    project_title: str,
+    tech: Sequence[str],
+    source_bullets: Sequence[str],
+    rewritten_bullets: Sequence[str],
+    warnings: List[str],
+) -> List[str]:
+    intro = _project_intro_bullet(project_title, rewritten_bullets, tech)
+    cleaned_rewritten = [_sentence_case(bullet) for bullet in rewritten_bullets if _sentence_case(bullet)]
+
+    remaining: List[str] = []
+    seen: Set[str] = set()
+    intro_norm = normalize_token(intro)
+    for bullet in cleaned_rewritten:
+        token = normalize_token(bullet)
+        if not token or token in seen or token == intro_norm:
+            continue
+        seen.add(token)
+        remaining.append(bullet)
+
+    metric_first = sorted(
+        remaining,
+        key=lambda value: (len(extract_metric_tokens(value)), len(value)),
+        reverse=True,
+    )
+    detail = metric_first[:2]
+
+    if len(detail) < 2:
+        source_candidates = [_sentence_case(bullet) for bullet in source_bullets if _sentence_case(bullet)]
+        for bullet in source_candidates:
+            token = normalize_token(bullet)
+            if not token or token == intro_norm:
+                continue
+            if any(normalize_token(existing) == token for existing in detail):
+                continue
+            detail.append(bullet)
+            if len(detail) >= 2:
+                break
+
+    if len(detail) < 2:
+        filler_candidates = [
+            _sentence_case(f'Implemented the {project_title} workflow with {", ".join(tech[:4])}' if tech else f'Implemented the {project_title} workflow end to end'),
+            _sentence_case('Validated system performance with tracked metrics, testing, and reliability checks'),
+        ]
+        for bullet in filler_candidates:
+            token = normalize_token(bullet)
+            if not token or token == intro_norm:
+                continue
+            if any(normalize_token(existing) == token for existing in detail):
+                continue
+            detail.append(bullet)
+            if len(detail) >= 2:
+                break
+
+        warnings.append(
+            f'Project "{project_title}" had fewer than 2 distinct implementation/impact bullets; added factual fallback bullets.'
+        )
+
+    return [intro, detail[0], detail[1]]
+
+
 def rewrite_candidate_bullets(
     candidate: CandidateItem,
     jd: JDAnalysis,
@@ -1346,6 +1604,15 @@ def rewrite_candidate_bullets(
         )
         final_bullets.append(final_bullet)
         warnings.extend(bullet_warnings)
+
+    if candidate.source_type.startswith('vault:project') or candidate.source_type in {'project', 'vault:club', 'vault:other'}:
+        return _format_project_bullet_pack(
+            project_title=candidate.title,
+            tech=candidate.tech,
+            source_bullets=source_bullets,
+            rewritten_bullets=final_bullets,
+            warnings=warnings,
+        )
 
     return final_bullets
 
@@ -1519,6 +1786,91 @@ def _build_vault_relevance_view(
     return relevance_items, missing_required_evidence
 
 
+def _high_confidence_threshold(selected: Sequence[Tuple[CandidateSource, float]]) -> float:
+    if not selected:
+        return 0.0
+    selected_scores = sorted((score for _, score in selected), reverse=True)
+    anchor_index = max(0, min(len(selected_scores) - 1, 2))
+    anchor_score = selected_scores[anchor_index]
+    floor_score = selected_scores[-1]
+    return max(0.0, min(anchor_score * 0.9, floor_score + 8.0))
+
+
+def _build_high_confidence_exclusions(
+    *,
+    scored: Sequence[Tuple[CandidateSource, float]],
+    selected: Sequence[Tuple[CandidateSource, float]],
+    required_terms: Set[str],
+    jd: JDAnalysis,
+    diagnostics_by_source_id: Dict[str, Dict[str, object]],
+    max_items: int = 3,
+) -> List[HighConfidenceExclusion]:
+    if not selected:
+        return []
+
+    selected_ids = {candidate_source.candidate.source_id for candidate_source, _ in selected}
+    selected_required_terms: Set[str] = set()
+    for candidate_source, _ in selected:
+        selected_required_terms.update(_candidate_token_set(candidate_source.candidate) & required_terms)
+
+    selected_experience = [pair for pair in selected if _is_experience_candidate(pair[0])]
+    selected_projects = [pair for pair in selected if _is_project_candidate(pair[0])]
+    selected_coursework = [pair for pair in selected if _is_coursework_candidate(pair[0])]
+    available_projects = len(
+        [
+            pair
+            for pair in scored
+            if _is_project_candidate(pair[0]) and len(pair[0].candidate.bullets) >= MIN_PROJECT_BULLETS
+        ]
+    )
+    exp_limit, project_limit = _selection_limits(jd, available_projects=available_projects)
+    threshold = _high_confidence_threshold(selected)
+
+    exclusions: List[HighConfidenceExclusion] = []
+    for candidate_source, score in scored:
+        source_id = candidate_source.candidate.source_id
+        if source_id in selected_ids or score <= 0 or score < threshold:
+            continue
+
+        reason_primary = _unselected_vault_reason(
+            candidate_source=candidate_source,
+            score=score,
+            required_terms=required_terms,
+            selected_required_terms=selected_required_terms,
+            selected_experience=selected_experience,
+            selected_projects=selected_projects,
+            selected_coursework=selected_coursework,
+            exp_limit=exp_limit,
+            project_limit=project_limit,
+        )
+        reasons: List[str] = [reason_primary]
+
+        diagnostics = diagnostics_by_source_id.get(source_id, {})
+        matched_required = [str(term) for term in diagnostics.get('matched_required_terms', []) if str(term)]
+        if len(reasons) < 2 and required_terms:
+            if matched_required:
+                reasons.append(
+                    f'Matched {len(matched_required)} of {len(required_terms)} must-have terms from the JD.'
+                )
+            else:
+                reasons.append('Did not contribute must-have JD term coverage compared with selected items.')
+
+        exclusions.append(
+            HighConfidenceExclusion(
+                source_type=candidate_source.candidate.source_type,
+                source_id=source_id,
+                title=candidate_source.candidate.title,
+                score=round(score, 3),
+                reasons=reasons[:2],
+                matched_required_terms=sorted(matched_required),
+            )
+        )
+        if len(exclusions) >= max_items:
+            break
+
+    return exclusions
+
+
 def tailor_resume(
     *,
     base_resume: CanonicalResume,
@@ -1529,8 +1881,8 @@ def tailor_resume(
     job_title_hint: Optional[str] = None,
 ) -> TailorResult:
     jd = analyze_jd_text(jd_text, llm=llm)
-    candidates = build_candidate_pool(base_resume, vault_items)
-    scored = score_candidates(
+    candidates = build_candidate_pool(base_resume, vault_items, allow_base_fallback=False)
+    scored, diagnostics_by_source_id = score_candidates_with_diagnostics(
         candidates,
         jd,
         jd_text=jd_text,
@@ -1634,6 +1986,30 @@ def tailor_resume(
                 title=candidate.title,
                 score=score,
                 why_included=selected_reason_by_source_id.get(candidate.source_id, ''),
+                matched_required_terms=[
+                    str(term)
+                    for term in diagnostics_by_source_id.get(candidate.source_id, {}).get('matched_required_terms', [])
+                    if str(term)
+                ],
+                matched_role_terms=[
+                    str(term)
+                    for term in diagnostics_by_source_id.get(candidate.source_id, {}).get('matched_role_terms', [])
+                    if str(term)
+                ],
+                matched_responsibility_terms=[
+                    str(term)
+                    for term in diagnostics_by_source_id.get(candidate.source_id, {}).get(
+                        'matched_responsibility_terms', []
+                    )
+                    if str(term)
+                ],
+                score_breakdown={
+                    str(key): float(value)
+                    for key, value in diagnostics_by_source_id.get(candidate.source_id, {}).get(
+                        'score_breakdown', {}
+                    ).items()
+                    if str(key)
+                },
             )
         )
 
@@ -1667,12 +2043,20 @@ def tailor_resume(
         jd=jd,
         selected_reason_by_source_id=selected_reason_by_source_id,
     )
+    high_confidence_exclusions = _build_high_confidence_exclusions(
+        scored=scored,
+        selected=selected,
+        required_terms=required_terms,
+        jd=jd,
+        diagnostics_by_source_id=diagnostics_by_source_id,
+    )
 
     report = TailorReport(
         chosen_items=selected_items,
         vault_relevance=vault_relevance,
         missing_required_evidence=missing_required_evidence,
         required_skill_evidence_map=required_skill_evidence_map,
+        high_confidence_exclusions=high_confidence_exclusions,
         keywords_covered=sorted(covered),
         keywords_missed=missed,
         warnings=unique_preserve_order(warnings),
@@ -1919,7 +2303,8 @@ def prune_resume_for_one_page(
     pruned.education = pruned.education[:2]
 
     experience_cap = max(1, max_bullets_per_item)
-    project_cap = max(MIN_PROJECT_BULLETS, max_bullets_per_item - 1)
+    project_cap = max(MIN_PROJECT_BULLETS, max_bullets_per_item)
+    project_min_bullets = min(PROJECT_BULLET_TARGET, project_cap)
 
     for item in pruned.experience:
         if len(item.bullets) > experience_cap:
@@ -1952,6 +2337,13 @@ def prune_resume_for_one_page(
             if project_index is not None:
                 project = pruned.projects[project_index]
                 if len(project.bullets) > MIN_PROJECT_BULLETS:
+                    if len(project.bullets) <= project_min_bullets:
+                        if len(pruned.projects) > MIN_PROJECT_ITEMS:
+                            removed = pruned.projects.pop(project_index)
+                            warnings.append(f'Removed low-priority project to preserve {project_min_bullets}-bullet minimum: {removed.name}')
+                            continue
+                        # Project bullets are already at enforced minimum and project count cannot be reduced here.
+                        # Fall through to experience/skills trimming instead of looping.
                     project.bullets = project.bullets[:-1]
                     warnings.append(f'Trimmed project bullet for one-page constraint: {project.name}')
                     continue
@@ -1992,7 +2384,7 @@ def tighten_resume_for_one_page(
     level: int = 1,
 ) -> CanonicalResume:
     level = max(1, min(level, 3))
-    tightened_bullets = max(1, MAX_BULLETS_PER_ITEM - level)
+    tightened_bullets = max(PROJECT_BULLET_TARGET, MAX_BULLETS_PER_ITEM - level)
     tightened_total = max(7, MAX_TOTAL_BULLETS - (level * 2))
     tightened_units = max(30, MAX_PAGE_UNITS - (level * 4))
 
@@ -2138,7 +2530,7 @@ def expand_resume_with_projects(
                 link=source_project.link,
                 dates=source_project.dates,
                 tech=source_project.tech[:5],
-                bullets=source_project.bullets[:max(MIN_PROJECT_BULLETS, 2)],
+                bullets=source_project.bullets[:PROJECT_BULLET_TARGET],
                 section=section,
             )
         )

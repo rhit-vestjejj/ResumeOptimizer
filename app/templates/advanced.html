@@ -1,35 +1,57 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="card">
-  <h2>Advanced Tools</h2>
-  <p class="muted">Power-user routes are still available here.</p>
+<section class="animate-fadeup rounded-3xl border border-stone-200 bg-white/85 p-6 shadow-sm md:p-8">
+  <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+    <div>
+      <p class="text-xs font-bold uppercase tracking-[0.2em] text-teal-700">Advanced Workspace</p>
+      <h2 class="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 md:text-4xl">Control Center</h2>
+      <p class="mt-2 max-w-2xl text-sm text-slate-700">Run setup, vault curation, job management, and audits from one place. Everything below keeps the same backend behavior, now with clearer UX and hierarchy.</p>
+    </div>
+    <div class="grid w-full max-w-md grid-cols-3 gap-2 text-center text-xs font-semibold md:text-sm">
+      <div class="rounded-xl border px-3 py-2 {% if base_resume_exists %}border-emerald-300 bg-emerald-50 text-emerald-900{% else %}border-amber-300 bg-amber-50 text-amber-900{% endif %}">
+        <p class="text-[0.65rem] uppercase tracking-wide">Resume</p>
+        <p class="mt-1">{% if base_resume_exists %}Loaded{% else %}Missing{% endif %}</p>
+      </div>
+      <div class="rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sky-900">
+        <p class="text-[0.65rem] uppercase tracking-wide">Vault</p>
+        <p class="mt-1">{{ vault_count }} items</p>
+      </div>
+      <div class="rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-indigo-900">
+        <p class="text-[0.65rem] uppercase tracking-wide">Jobs</p>
+        <p class="mt-1">{{ job_count }} active</p>
+      </div>
+    </div>
+  </div>
 </section>
 
-<section class="card-grid">
-  <article class="card">
-    <h3>Resume Canonical Editor</h3>
-    <p>Status: {% if base_resume_exists %}<strong>Loaded</strong>{% else %}<strong>Missing</strong>{% endif %}</p>
-    <a href="/resume/upload">Open Resume Upload / Structured Editor</a>
+<section class="mt-5 grid gap-4 animate-fadeup md:grid-cols-2 xl:grid-cols-3" style="animation-delay: 100ms;">
+  <article class="group rounded-2xl border border-stone-200 bg-white/80 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+    <p class="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Profile</p>
+    <h3 class="mt-2 text-lg font-bold text-slate-900">Resume Canonical Editor</h3>
+    <p class="mt-2 text-sm text-slate-700">Upload once, validate fields, and keep one canonical source synced to your vault.</p>
+    <a class="mt-4 inline-flex items-center rounded-lg bg-teal-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-800" href="/resume/upload">Open Resume Upload</a>
   </article>
-  <article class="card">
-    <h3>Vault Manager</h3>
-    <p>Total items: <strong>{{ vault_count }}</strong></p>
-    <a href="/vault">Open Vault</a>
+
+  <article class="group rounded-2xl border border-stone-200 bg-white/80 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+    <p class="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Evidence</p>
+    <h3 class="mt-2 text-lg font-bold text-slate-900">Vault Manager</h3>
+    <p class="mt-2 text-sm text-slate-700">Create, ingest, and refine proof points used to tailor every generated resume.</p>
+    <a class="mt-4 inline-flex items-center rounded-lg bg-teal-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-800" href="/vault">Open Vault</a>
   </article>
-  <article class="card">
-    <h3>Job Workspace</h3>
-    <p>Total jobs: <strong>{{ job_count }}</strong></p>
-    <a href="/jobs">Open Jobs</a>
+
+  <article class="group rounded-2xl border border-stone-200 bg-white/80 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+    <p class="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Pipeline</p>
+    <h3 class="mt-2 text-lg font-bold text-slate-900">Job Workspace</h3>
+    <p class="mt-2 text-sm text-slate-700">Ingest listings, store job descriptions, and trigger tailoring runs against each job.</p>
+    <a class="mt-4 inline-flex items-center rounded-lg bg-teal-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-800" href="/jobs">Open Jobs</a>
   </article>
-  <article class="card">
-    <h3>Audit Lab</h3>
-    <p>Run diagnostics and patch-generation workflows.</p>
-    <a href="/audit">Open Audit</a>
+
+  <article class="group rounded-2xl border border-stone-200 bg-white/80 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+    <p class="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Diagnostics</p>
+    <h3 class="mt-2 text-lg font-bold text-slate-900">Audit Lab</h3>
+    <p class="mt-2 text-sm text-slate-700">Run ATS checks, linting, patch proposals, and output verification in one report.</p>
+    <a class="mt-4 inline-flex items-center rounded-lg bg-teal-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-800" href="/audit">Open Audit</a>
   </article>
-  <article class="card">
-    <h3>Legacy Dashboard</h3>
-    <p>Original internal summary page.</p>
-    <a href="/advance/dashboard">Open Legacy Dashboard</a>
-  </article>
+
 </section>
 {% endblock %}

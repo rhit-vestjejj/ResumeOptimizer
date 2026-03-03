@@ -1,0 +1,57 @@
+identity:
+  name: Eval Candidate
+  email: eval@example.com
+  phone: "+1-555-000-0000"
+  location: Remote
+  links:
+    - https://github.com/eval-candidate
+summary: Backend and machine learning engineer focused on production systems.
+education:
+  - school: Example University
+    degree: Bachelor of Science
+    major: Computer Science
+    minors: []
+    gpa: "3.9"
+    dates:
+      start: Aug 2021
+      end: May 2025
+    coursework:
+      - Machine Learning
+      - Distributed Systems
+      - Database Systems
+experience:
+  - company: Harbor Data
+    title: Software Engineering Intern
+    location: Remote
+    dates:
+      start: May 2024
+      end: Aug 2024
+    bullets:
+      - Built FastAPI ingestion services and SQL pipelines for customer analytics.
+      - Automated dashboard refresh jobs and reduced stale data incidents by 35%.
+projects:
+  - name: Baseline API Platform
+    dates:
+      start: Jan 2024
+      end: Apr 2024
+    tech:
+      - Python
+      - FastAPI
+      - PostgreSQL
+      - Docker
+    bullets:
+      - Developed backend APIs for operational metrics and alerts.
+      - Implemented CI checks and containerized deployment workflows.
+skills:
+  categories:
+    Languages:
+      - Python
+      - SQL
+    Frameworks:
+      - FastAPI
+      - Flask
+    Data:
+      - PostgreSQL
+      - Redis
+      - Kafka
+awards: []

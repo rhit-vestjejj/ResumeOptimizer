@@ -1,0 +1,21 @@
+type: project
+title: Real-Time Fraud Scoring Pipeline
+dates:
+  start: May 2025
+  end: Aug 2025
+tags:
+  - machine-learning
+  - fraud
+  - inference
+tech:
+  - Python
+  - XGBoost
+  - Redis
+  - Kafka
+  - FastAPI
+bullets:
+  - text: Built streaming fraud scoring with Kafka and Redis feature state for low-latency inference.
+  - text: Trained and tuned XGBoost models for imbalanced fraud labels and monitored precision-recall drift.
+  - text: Exposed model scoring and health endpoints through FastAPI services.
+links: []
+source_artifacts: []

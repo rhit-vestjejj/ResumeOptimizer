@@ -1,0 +1,16 @@
+Role: Frontend Engineer
+
+Responsibilities:
+- Build modern web dashboards and frontend workflows.
+- Improve performance and accessibility in customer-facing UI.
+- Collaborate with product and design teams.
+
+Required skills:
+- React
+- TypeScript
+- CSS
+- frontend architecture
+
+Preferred:
+- API integration
+- monitoring dashboards

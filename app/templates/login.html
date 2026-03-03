@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="mx-auto max-w-lg animate-fadeup overflow-hidden rounded-[1.8rem] border border-white/70 bg-white/88 p-7 shadow-[0_20px_45px_rgba(24,55,93,0.15)] backdrop-blur">
+  <p class="text-xs font-bold uppercase tracking-[0.2em] text-sky-700">Welcome Back</p>
+  <h2 class="mt-2 font-display text-3xl font-bold text-slate-900">Sign In</h2>
+  <p class="mt-2 text-sm text-slate-600">Access your resume workspace and continue tailoring.</p>
+  {% if error %}
+    <p class="mt-4 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-900">{{ error }}</p>
+  {% endif %}
+  <form class="mt-4" method="post" action="/auth/login">
+    <input type="hidden" name="next" value="{{ next_path }}" />
+    <label for="email" class="text-sm font-semibold text-slate-700">Email</label>
+    <input id="email" name="email" type="email" autocomplete="email" required value="{{ email }}" />
+    <label for="password" class="text-sm font-semibold text-slate-700">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required />
+    <button type="submit" class="mt-2">Sign in</button>
+  </form>
+  {% if allow_self_signup %}
+  <p class="mt-4 text-sm text-slate-600">
+    Need an account?
+    <a href="/auth/register" class="font-semibold text-teal-800 underline">Create one</a>
+  </p>
+  {% else %}
+  <p class="mt-4 text-sm text-slate-600">Accounts are invite-only for this release.</p>
+  {% endif %}
+</section>
+{% endblock %}

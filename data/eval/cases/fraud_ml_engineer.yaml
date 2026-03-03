@@ -1,0 +1,19 @@
+case_id: fraud_ml_engineer
+description: Fraud ML role should prioritize model/inference evidence and streaming features.
+base_resume_path: ../fixtures/base.yaml
+vault_items_dir: ../fixtures/vault/items
+jd_text_path: ../jds/fraud_ml_engineer.txt
+expected_selected_ids:
+  - fraud_ml
+  - backend_payments
+  - data_platform
+  - cloud_infra
+must_cover_terms:
+  - python
+  - xgboost
+  - redis
+  - kafka
+  - fastapi
+must_not_claim_terms:
+  - tableau
+mode: HARD_TRUTH

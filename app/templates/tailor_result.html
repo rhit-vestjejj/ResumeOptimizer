@@ -1,36 +1,44 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="card">
-  <h2>Tailoring Complete</h2>
-  <p>Job: <code>{{ job_id }}</code> | Output run: <code>{{ timestamp }}</code></p>
-  <p>Match score: <code>{{ match_score }}</code></p>
-  {% if pdf_exists %}
-  <p><a href="/outputs/{{ job_id }}/{{ timestamp }}/resume.pdf">Download LaTeX PDF</a></p>
-  {% endif %}
-  {% if ats_pdf_exists %}
-  <p><a href="/outputs/{{ job_id }}/{{ timestamp }}/ats_resume.pdf">Download ATS PDF</a></p>
-  {% endif %}
-  {% if ats_docx_exists %}
-  <p><a href="/outputs/{{ job_id }}/{{ timestamp }}/ats_resume.docx">Download ATS DOCX</a></p>
-  {% endif %}
-  {% if ats_txt_exists %}
-  <p><a href="/outputs/{{ job_id }}/{{ timestamp }}/ats_resume.txt">Download ATS TXT</a></p>
-  {% endif %}
-  <p><a href="/api/export_bundle/{{ job_id }}/{{ timestamp }}">Download Bundle (ZIP)</a></p>
+<section class="animate-fadeup rounded-2xl border border-stone-200 bg-white/85 p-5 shadow-sm md:p-7">
+  <h2 class="text-2xl font-extrabold tracking-tight text-slate-900 md:text-3xl">Tailored Resume Ready</h2>
+  <p class="mt-2 text-sm text-slate-600">Run <code class="rounded bg-stone-100 px-1.5 py-0.5">{{ timestamp }}</code> for job <code class="rounded bg-stone-100 px-1.5 py-0.5">{{ job_id }}</code></p>
+  <p class="mt-3 text-base"><strong>Match Score:</strong> <span class="inline-block rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 font-bold text-emerald-900">{{ "%.1f"|format(match_score) }}</span></p>
+  <div class="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+    <a class="rounded-xl bg-teal-700 px-4 py-2.5 text-center text-sm font-bold text-white transition hover:bg-teal-800" href="/api/export_bundle/{{ job_id }}/{{ timestamp }}">Download Bundle (ZIP)</a>
+    <a class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-center text-sm font-semibold text-slate-800 transition hover:bg-stone-100" href="/outputs/{{ job_id }}/{{ timestamp }}/latex">Preview/Edit LaTeX</a>
+    {% if pdf_exists %}
+    <a class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-center text-sm font-semibold text-slate-800 transition hover:bg-stone-100" href="/outputs/{{ job_id }}/{{ timestamp }}/resume.pdf">Resume PDF</a>
+    {% endif %}
+    {% if ats_pdf_exists %}
+    <a class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-center text-sm font-semibold text-slate-800 transition hover:bg-stone-100" href="/outputs/{{ job_id }}/{{ timestamp }}/ats_resume.pdf">ATS PDF</a>
+    {% endif %}
+    {% if ats_docx_exists %}
+    <a class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-center text-sm font-semibold text-slate-800 transition hover:bg-stone-100" href="/outputs/{{ job_id }}/{{ timestamp }}/ats_resume.docx">ATS DOCX</a>
+    {% endif %}
+    {% if ats_txt_exists %}
+    <a class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-center text-sm font-semibold text-slate-800 transition hover:bg-stone-100" href="/outputs/{{ job_id }}/{{ timestamp }}/ats_resume.txt">ATS TXT</a>
+    {% endif %}
+  </div>
   {% if compile_error %}
-  <p class="warn-text">{{ compile_error }}</p>
+  <p class="mt-3 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-900">{{ compile_error }}</p>
   {% endif %}
 </section>
 
-<section class="card">
-  <h2>Match Explanation</h2>
-  <h3>Evidence Selected</h3>
-  <ul>
+<section class="mt-4 animate-fadeup rounded-2xl border border-stone-200 bg-white/85 p-5 shadow-sm md:p-6" style="animation-delay: 100ms;">
+  <h2 class="text-xl font-bold text-slate-900">Why These Items Were Chosen</h2>
+  <ul class="mt-3 list-disc space-y-2 pl-6 text-sm text-slate-800">
     {% for item in chosen_items %}
       <li>
-        <strong>{{ item.title }}</strong> ({{ item.source_type }}) - score {{ item.score }}
+        <strong>{{ item.title }}</strong> ({{ item.source_type }}) - score {{ item.score | round(2) }}
         {% if item.why_included %}
         <br /><span class="muted">{{ item.why_included }}</span>
+        {% endif %}
+        {% if item.matched_required_terms %}
+        <br /><span class="text-slate-600">Must-have matches: {{ item.matched_required_terms | join(', ') }}</span>
+        {% endif %}
+        {% if item.score_breakdown %}
+        <br /><span class="text-slate-600">Signals: ATS {{ item.score_breakdown.ats_score | default(0) | round(2) }}, required {{ item.score_breakdown.required_signal | default(0) | round(2) }}, responsibility {{ item.score_breakdown.responsibility_signal | default(0) | round(2) }}</span>
         {% endif %}
       </li>
     {% endfor %}
@@ -38,84 +46,98 @@
       <li>No evidence items reported.</li>
     {% endif %}
   </ul>
-  <h3>Vault Relevance</h3>
   {% if missing_required_evidence_display %}
-    <p class="warn-text">This JD requires evidence you do not currently have in your vault: {{ missing_required_evidence_display | join(', ') }}</p>
+    <p class="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">Missing evidence in vault: {{ missing_required_evidence_display | join(', ') }}</p>
   {% endif %}
-  <h3>Evidence Map</h3>
-  <ul>
-    {% for evidence in required_skill_evidence_map %}
-      <li>
-        <strong>{{ evidence.required_term_display }}</strong>
-        {% if evidence.has_evidence %}
-          <br /><span class="muted">{{ evidence.source_title }}{% if evidence.source_type_display %} ({{ evidence.source_type_display }}){% endif %}</span>
-          <br /><span class="muted">{{ evidence.evidence_bullet }}</span>
-        {% else %}
-          <br /><span class="warn-text">No evidence in selected bullets.</span>
-        {% endif %}
-      </li>
-    {% endfor %}
-    {% if not required_skill_evidence_map %}
-      <li>No required skills extracted from this JD.</li>
-    {% endif %}
-  </ul>
-  <ul>
-    {% for item in vault_relevance %}
-      <li>
-        <strong>{{ item.title }}</strong> ({{ item.item_type }}) - relevance {{ item.relevance_score }}
-        {% if item.selected %}
-          <br /><span class="muted">Selected.</span>
-          {% if item.why_selected %}
-            <br /><span class="muted">{{ item.why_selected }}</span>
-          {% endif %}
-        {% else %}
-          <br /><span class="muted">Not selected.</span>
-          {% if item.why_not_selected %}
-            <br /><span class="muted">{{ item.why_not_selected }}</span>
-          {% endif %}
-        {% endif %}
-        {% if item.matched_required_terms_display %}
-          <br /><span class="muted">Must-have terms covered: {{ item.matched_required_terms_display | join(', ') }}</span>
-        {% endif %}
-      </li>
-    {% endfor %}
-    {% if not vault_relevance %}
-      <li>No vault items available for relevance analysis.</li>
-    {% endif %}
-  </ul>
-  <h3>Keywords Covered</h3>
-  <p>
-    {% if keywords_covered %}
-      {{ keywords_covered | join(', ') }}
-    {% else %}
-      None reported.
-    {% endif %}
-  </p>
-  <h3>Keywords Missed</h3>
-  <p>
-    {% if keywords_missed %}
-      {{ keywords_missed | join(', ') }}
-    {% else %}
-      None reported.
-    {% endif %}
-  </p>
 </section>
 
-<section class="card">
-  <h2>Warnings</h2>
-  <ul>
-    {% for warning in warnings %}
-      <li>{{ warning }}</li>
-    {% endfor %}
-    {% if not warnings %}
-      <li>No warnings.</li>
-    {% endif %}
-  </ul>
+<section class="mt-4 animate-fadeup rounded-2xl border border-stone-200 bg-white/85 p-5 shadow-sm md:p-6" style="animation-delay: 180ms;">
+  <details class="group rounded-xl border border-stone-200 bg-stone-50 p-3">
+    <summary class="cursor-pointer text-sm font-bold text-slate-800">Required Skill Evidence Map</summary>
+    <ul class="mt-3 list-disc space-y-2 pl-6 text-sm text-slate-800">
+      {% for evidence in required_skill_evidence_map %}
+        <li>
+          <strong>{{ evidence.required_term_display }}</strong>
+          {% if evidence.has_evidence %}
+            <br /><span class="text-slate-600">{{ evidence.source_title }}{% if evidence.source_type_display %} ({{ evidence.source_type_display }}){% endif %}</span>
+            <br /><span class="text-slate-600">{{ evidence.evidence_bullet }}</span>
+          {% else %}
+            <br /><span class="text-rose-700">No evidence in selected bullets.</span>
+          {% endif %}
+        </li>
+      {% endfor %}
+      {% if not required_skill_evidence_map %}
+        <li>No required skills extracted from this JD.</li>
+      {% endif %}
+    </ul>
+  </details>
+
+  <details class="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
+    <summary class="cursor-pointer text-sm font-bold text-slate-800">Vault Relevance Details</summary>
+    <ul class="mt-3 list-disc space-y-2 pl-6 text-sm text-slate-800">
+      {% for item in vault_relevance %}
+        <li>
+          <strong>{{ item.title }}</strong> ({{ item.item_type }}) - relevance {{ item.relevance_score }}
+          {% if item.selected %}
+            <br /><span class="text-slate-600">Selected.</span>
+            {% if item.why_selected %}
+              <br /><span class="text-slate-600">{{ item.why_selected }}</span>
+            {% endif %}
+          {% else %}
+            <br /><span class="text-slate-600">Not selected.</span>
+            {% if item.why_not_selected %}
+              <br /><span class="text-slate-600">{{ item.why_not_selected }}</span>
+            {% endif %}
+          {% endif %}
+          {% if item.matched_required_terms_display %}
+            <br /><span class="text-slate-600">Must-have terms covered: {{ item.matched_required_terms_display | join(', ') }}</span>
+          {% endif %}
+        </li>
+      {% endfor %}
+      {% if not vault_relevance %}
+        <li>No vault items available for relevance analysis.</li>
+      {% endif %}
+    </ul>
+  </details>
+
+  <details class="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
+    <summary class="cursor-pointer text-sm font-bold text-slate-800">Keywords And Warnings</summary>
+    <p class="mt-3 text-sm"><strong>Covered:</strong> {% if keywords_covered %}{{ keywords_covered | join(', ') }}{% else %}None{% endif %}</p>
+    <p class="mt-1 text-sm"><strong>Missed:</strong> {% if keywords_missed %}{{ keywords_missed | join(', ') }}{% else %}None{% endif %}</p>
+    <ul class="mt-3 list-disc space-y-1 pl-6 text-sm text-slate-800">
+      {% for warning in warnings %}
+        <li>{{ warning }}</li>
+      {% endfor %}
+      {% if not warnings %}
+        <li>No warnings.</li>
+      {% endif %}
+    </ul>
+  </details>
+
+  <details class="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
+    <summary class="cursor-pointer text-sm font-bold text-slate-800">High-Confidence Exclusions</summary>
+    <ul class="mt-3 list-disc space-y-2 pl-6 text-sm text-slate-800">
+      {% for item in high_confidence_exclusions %}
+        <li>
+          <strong>{{ item.title }}</strong> ({{ item.source_type }}) - score {{ item.score | round(2) }}
+          {% if item.matched_required_terms %}
+            <br /><span class="text-slate-600">Matched must-have terms: {{ item.matched_required_terms | join(', ') }}</span>
+          {% endif %}
+          {% for reason in item.reasons %}
+            <br /><span class="text-slate-600">{{ reason }}</span>
+          {% endfor %}
+        </li>
+      {% endfor %}
+      {% if not high_confidence_exclusions %}
+        <li>No high-confidence exclusions in this run.</li>
+      {% endif %}
+    </ul>
+  </details>
 </section>
 
-<section class="card">
-  <a href="/">Generate Another Resume</a>
-  <span class="muted"> | </span>
-  <a href="/jobs/{{ job.job_id }}">Open Job Workspace</a>
+<section class="mt-4 animate-fadeup rounded-2xl border border-stone-200 bg-white/85 p-4 text-sm shadow-sm" style="animation-delay: 260ms;">
+  <a class="font-semibold text-teal-800 underline" href="/">Generate Another Resume</a>
+  <span class="mx-1 text-slate-400">|</span>
+  <a class="font-semibold text-teal-800 underline" href="/jobs/{{ job.job_id }}">Open Job Page</a>
 </section>
 {% endblock %}

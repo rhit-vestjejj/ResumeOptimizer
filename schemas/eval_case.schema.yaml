@@ -1,0 +1,50 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: SelectionBenchmarkCase
+type: object
+additionalProperties: false
+required:
+  - case_id
+  - base_resume_path
+  - vault_items_dir
+  - jd_text_path
+properties:
+  case_id:
+    type: string
+    minLength: 1
+  description:
+    type: string
+  base_resume_path:
+    type: string
+    minLength: 1
+  vault_items_dir:
+    type: string
+    minLength: 1
+  jd_text_path:
+    type: string
+    minLength: 1
+  expected_selected_ids:
+    type: array
+    items:
+      type: string
+      minLength: 1
+    uniqueItems: true
+  must_cover_terms:
+    type: array
+    items:
+      type: string
+      minLength: 1
+    uniqueItems: true
+  must_not_claim_terms:
+    type: array
+    items:
+      type: string
+      minLength: 1
+    uniqueItems: true
+  mode:
+    type: string
+    enum:
+      - HARD_TRUTH
+      - FUCK_IT
+  selection_window:
+    type: integer
+    minimum: 1

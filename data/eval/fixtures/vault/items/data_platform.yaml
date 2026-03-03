@@ -1,0 +1,19 @@
+type: project
+title: Batch Data Platform
+dates:
+  start: Mar 2025
+  end: Jun 2025
+tags:
+  - data-platform
+  - etl
+  - analytics
+tech:
+  - Python
+  - Airflow
+  - dbt
+  - PostgreSQL
+bullets:
+  - text: Orchestrated ETL pipelines in Airflow and standardized models with dbt across analytics domains.
+  - text: Reduced failed pipeline retries by adding data validation checks and dependency tracking.
+links: []
+source_artifacts: []

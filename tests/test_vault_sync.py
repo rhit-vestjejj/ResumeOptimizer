@@ -82,3 +82,9 @@ def test_build_candidate_pool_prefers_vault_items() -> None:
     candidates = build_candidate_pool(base, [('id1', vault_item)])
     assert candidates
     assert all(candidate.candidate.source_type.startswith('vault:') for candidate in candidates)
+
+
+def test_build_candidate_pool_is_vault_only_when_vault_is_empty() -> None:
+    base = _sample_resume()
+    candidates = build_candidate_pool(base, [])
+    assert candidates == []

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+import logging
 import re
+import sqlite3
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, AsyncIterator, Dict, Optional
+from urllib.parse import quote
 
 import yaml
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -35,9 +39,10 @@ from app.services.ats_engine import (
     parse_job_description,
     version_resume,
 )
+from app.services.auth import AuthStore, AuthUser, SessionManager
 from app.services.latex import LatexRenderError, LatexService
 from app.services.llm import LLMService, LLMUnavailableError
-from app.services.repository import DataRepository
+from app.services.repository import DataRepository, get_current_user_id, reset_current_user_id, set_current_user_id
 from app.services.scraper import ScrapeError, scrape_job_posting
 from app.services.tailoring import (
     MAX_PROJECT_ITEMS,
@@ -53,6 +58,8 @@ from app.utils import ensure_within, normalize_token
 
 settings: Settings = get_settings()
 repository = DataRepository(settings)
+auth_store = AuthStore(settings.resolved_sqlite_path)
+session_manager = SessionManager(settings.app_secret_key, ttl_seconds=settings.session_ttl_seconds)
 latex_service = LatexService(settings.templates_dir)
 
 llm_init_error: Optional[str] = None
@@ -62,7 +69,13 @@ except LLMUnavailableError as exc:
     llm_service = None
     llm_init_error = str(exc)
 
-app = FastAPI(title='Local Resume Tailor', version='1.0.0')
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    _bootstrap_startup_user()
+    yield
+
+
+app = FastAPI(title='Local Resume Tailor', version='1.0.0', lifespan=_lifespan)
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
 templates = Jinja2Templates(directory='app/templates')
 DEFAULT_TAILOR_MODE = TailorMode.HARD_TRUTH
@@ -85,42 +98,452 @@ TERM_DISPLAY_OVERRIDES: Dict[str, str] = {
     'sklearn': 'scikit-learn',
 }
 UPPERCASE_DISPLAY_TERMS = {'ai', 'llm', 'nlp', 'sql', 'api', 'etl', 'aws', 'gcp', 'dbt'}
+logger = logging.getLogger(__name__)
+
+
+def _request_id(request: Request) -> str:
+    value = getattr(request.state, 'request_id', '')
+    return str(value).strip()
+
+
+def _with_request_id(request: Request, message: str) -> str:
+    request_id = _request_id(request)
+    if not request_id:
+        return message
+    return f'{message} (request id: {request_id})'
+
+
+def _flash_message(request: Request) -> Optional[Dict[str, str]]:
+    key = (request.query_params.get('flash') or '').strip()
+    mapping = {
+        'resume_saved': 'Base resume saved and synced to vault.',
+        'vault_synced': 'Base resume synced into vault items.',
+        'vault_saved': 'Vault item saved.',
+        'vault_deleted': 'Vault item deleted.',
+        'job_ingested': 'Job description ingested and ready to tailor.',
+        'jd_saved': 'Job description text saved.',
+    }
+    message = mapping.get(key)
+    if not message:
+        return None
+    return {'kind': 'success', 'message': message}
 
 
 def render(request: Request, template_name: str, context: Dict[str, Any]) -> HTMLResponse:
+    current_user = getattr(request.state, 'current_user', None)
     base_context = {
         'request': request,
         'llm_available': bool(llm_service and llm_service.available),
         'token_header': settings.request_token_header,
         'llm_init_error': llm_init_error,
+        'current_user': current_user,
+        'is_authenticated': bool(current_user),
+        'allow_self_signup': settings.allow_self_signup,
+        'request_id': _request_id(request),
+        'flash': _flash_message(request),
     }
     base_context.update(context)
     return templates.TemplateResponse(template_name, base_context)
 
 
 @app.middleware('http')
+async def attach_request_id(request: Request, call_next):
+    request.state.request_id = uuid.uuid4().hex[:12]
+    response = await call_next(request)
+    response.headers['X-Request-ID'] = _request_id(request)
+    return response
+
+
+@app.middleware('http')
 async def require_token_header(request: Request, call_next):
     required_token = settings.resume_app_token
+    if request.url.path.startswith('/auth/'):
+        return await call_next(request)
     if required_token and request.method.upper() == 'POST':
         provided_token = request.headers.get(settings.request_token_header)
         if provided_token != required_token:
             return JSONResponse(
                 status_code=401,
                 content={
-                    'error': 'Missing or invalid token header for POST request.',
+                    'error': _with_request_id(request, 'Missing or invalid token header for POST request.'),
                     'required_header': settings.request_token_header,
                 },
             )
     return await call_next(request)
 
 
+def _path_requires_auth(path: str) -> bool:
+    public_prefixes = (
+        '/auth/',
+        '/static/',
+        '/docs',
+        '/openapi.json',
+        '/redoc',
+        '/healthz',
+        '/readyz',
+    )
+    return not path.startswith(public_prefixes)
+
+
+def _expects_json_response(request: Request) -> bool:
+    accept = (request.headers.get('accept') or '').lower()
+    return request.url.path.startswith('/api/') or 'application/json' in accept
+
+
+def _login_redirect(path: str, query: str) -> RedirectResponse:
+    next_target = path
+    if query:
+        next_target = f'{path}?{query}'
+    return RedirectResponse(url=f'/auth/login?next={quote(next_target, safe="/?=&")}', status_code=303)
+
+
+@app.middleware('http')
+async def require_auth_session(request: Request, call_next):
+    session_token = request.cookies.get(settings.session_cookie_name)
+    user_id = session_manager.parse(session_token)
+    current_user: Optional[AuthUser] = auth_store.get_user_by_id(user_id) if user_id else None
+    if current_user and not current_user.is_active:
+        current_user = None
+
+    request.state.current_user = current_user
+    request.state.current_user_id = current_user.id if current_user else None
+    token = set_current_user_id(request.state.current_user_id)
+    try:
+        if _path_requires_auth(request.url.path) and request.state.current_user_id is None:
+            if _expects_json_response(request):
+                return JSONResponse(status_code=401, content={'error': _with_request_id(request, 'Authentication required.')})
+            return _login_redirect(request.url.path, request.url.query)
+        return await call_next(request)
+    finally:
+        reset_current_user_id(token)
+
+
+def _bootstrap_startup_user() -> None:
+    try:
+        user = auth_store.ensure_bootstrap_user(
+            email=settings.bootstrap_user_email,
+            password=settings.bootstrap_user_password,
+        )
+    except Exception as exc:
+        logger.exception('Bootstrap user initialization failed: %s', exc)
+        return
+    if not user:
+        return
+    try:
+        repository.migrate_legacy_data_to_user(user.id)
+    except Exception as exc:
+        logger.warning('Legacy migration skipped for bootstrap user %s: %s', user.id, exc)
+    _safe_index_call(f'refresh_indexes:{user.id}', lambda: _refresh_user_indexes(user.id))
+
+
+def _safe_next_path(value: Optional[str]) -> str:
+    candidate = (value or '').strip()
+    if not candidate.startswith('/'):
+        return '/'
+    if candidate.startswith('//'):
+        return '/'
+    return candidate
+
+
+def _session_cookie_kwargs() -> Dict[str, Any]:
+    return {
+        'max_age': settings.session_ttl_seconds,
+        'httponly': True,
+        'secure': settings.session_cookie_secure,
+        'samesite': 'lax',
+        'path': '/',
+    }
+
+
+def _current_user(request: Request) -> Optional[AuthUser]:
+    user = getattr(request.state, 'current_user', None)
+    if isinstance(user, AuthUser):
+        return user
+    return None
+
+
+def _active_user_id() -> Optional[str]:
+    user_id = get_current_user_id()
+    if user_id and user_id.strip():
+        return user_id
+    return None
+
+
+def _max_upload_bytes() -> int:
+    return settings.max_upload_mb * 1024 * 1024
+
+
+def _upload_limit_message() -> str:
+    return f'File exceeds the {settings.max_upload_mb} MB upload limit.'
+
+
+def _build_setup_checklist() -> Dict[str, Any]:
+    base_resume_exists = repository.load_base_resume() is not None
+    vault_count = len(repository.list_vault_items())
+    job_count = len(repository.list_jobs())
+    llm_ready = bool(llm_service and llm_service.available)
+    items = [
+        {
+            'label': 'Upload base resume',
+            'done': base_resume_exists,
+            'href': '/resume/upload',
+            'detail': 'Parse your latest resume and store canonical profile data.',
+        },
+        {
+            'label': 'Add vault evidence',
+            'done': vault_count > 0,
+            'href': '/vault',
+            'detail': f'{vault_count} item{"s" if vault_count != 1 else ""} currently available.',
+        },
+        {
+            'label': 'Enable AI tailoring',
+            'done': llm_ready,
+            'href': '/advance',
+            'detail': 'Set OPENAI_API_KEY in environment config.',
+        },
+        {
+            'label': 'Ingest at least one job',
+            'done': job_count > 0,
+            'href': '/jobs/new',
+            'detail': f'{job_count} saved job{"s" if job_count != 1 else ""}.',
+        },
+    ]
+    completed_count = sum(1 for item in items if item['done'])
+    return {'items': items, 'completed_count': completed_count, 'total': len(items)}
+
+
+def _registration_disabled_response(request: Request, *, next_path: str) -> HTMLResponse:
+    response = render(
+        request,
+        'login.html',
+        {
+            'error': 'Account creation is invite-only. Ask the app owner to create your account.',
+            'email': '',
+            'next_path': next_path,
+        },
+    )
+    response.status_code = 403
+    return response
+
+
+def _safe_index_call(action: str, func) -> None:
+    try:
+        func()
+    except Exception as exc:
+        logger.warning('Index update skipped (%s): %s', action, exc)
+
+
+def _refresh_vault_index(user_id: Optional[str]) -> None:
+    if not user_id:
+        return
+    vault_dir = repository.vault_dir_for(user_id)
+    for item_id, item in repository.list_vault_items(user_id=user_id):
+        item_path = ensure_within(vault_dir, vault_dir / f'{item_id}.yaml')
+        _safe_index_call(
+            f'vault_item:{item_id}',
+            lambda: auth_store.upsert_vault_item(
+                user_id=user_id,
+                item_id=item_id,
+                title=item.title,
+                item_type=item.type.value,
+                path=str(item_path),
+            ),
+        )
+
+
+def _refresh_user_indexes(user_id: Optional[str]) -> None:
+    if not user_id:
+        return
+    resume_path = repository.base_resume_path_for(user_id)
+    if resume_path.exists():
+        _safe_index_call(
+            'base_resume',
+            lambda: auth_store.upsert_base_resume(user_id=user_id, path=str(resume_path)),
+        )
+
+    _refresh_vault_index(user_id)
+
+    jobs_dir = repository.jobs_dir_for(user_id)
+    for job in repository.list_jobs(user_id=user_id):
+        job_path = ensure_within(jobs_dir, jobs_dir / job.job_id / 'job.yaml')
+        _safe_index_call(
+            f'job:{job.job_id}',
+            lambda: auth_store.upsert_job(
+                user_id=user_id,
+                job_id=job.job_id,
+                title=job.title,
+                company=job.company,
+                url=job.url,
+                path=str(job_path),
+            ),
+        )
+
+    outputs_dir = repository.outputs_dir_for(user_id)
+    if outputs_dir.exists():
+        for job_dir in sorted(path for path in outputs_dir.glob('*') if path.is_dir()):
+            for run_dir in sorted(path for path in job_dir.glob('*') if path.is_dir()):
+                _safe_index_call(
+                    f'output:{job_dir.name}:{run_dir.name}',
+                    lambda: auth_store.upsert_output(
+                        user_id=user_id,
+                        job_id=job_dir.name,
+                        timestamp=run_dir.name,
+                        path=str(run_dir),
+                    ),
+                )
+
+
+@app.get('/auth/login', response_class=HTMLResponse)
+async def auth_login_page(request: Request, next: str = '') -> HTMLResponse:
+    if _current_user(request):
+        return RedirectResponse(url='/', status_code=303)
+    return render(
+        request,
+        'login.html',
+        {
+            'error': None,
+            'email': '',
+            'next_path': _safe_next_path(next),
+        },
+    )
+
+
+@app.post('/auth/login', response_class=HTMLResponse)
+async def auth_login(
+    request: Request,
+    email: str = Form(default=''),
+    password: str = Form(default=''),
+    next: str = Form(default=''),
+):
+    normalized_email = (email or '').strip().lower()
+    next_path = _safe_next_path(next)
+    try:
+        user = auth_store.verify_credentials(email=normalized_email, password=password or '')
+    except Exception as exc:
+        logger.exception('Auth verification failed during login: %s', exc)
+        return render(
+            request,
+            'login.html',
+            {
+                'error': 'Login is temporarily unavailable. Check server storage and retry.',
+                'email': normalized_email,
+                'next_path': next_path,
+            },
+        )
+    if user is None:
+        return render(
+            request,
+            'login.html',
+            {
+                'error': 'Invalid email or password.',
+                'email': normalized_email,
+                'next_path': next_path,
+            },
+        )
+
+    try:
+        auth_store.update_last_login(user.id)
+    except Exception as exc:
+        logger.warning('Failed to update last_login for user %s: %s', user.id, exc)
+    if repository.has_legacy_data() and auth_store.count_users() == 1:
+        _safe_index_call(f'migrate_legacy:{user.id}', lambda: repository.migrate_legacy_data_to_user(user.id))
+    _safe_index_call(f'refresh_indexes:{user.id}', lambda: _refresh_user_indexes(user.id))
+
+    response = RedirectResponse(url=next_path or '/', status_code=303)
+    response.set_cookie(key=settings.session_cookie_name, value=session_manager.issue(user.id), **_session_cookie_kwargs())
+    return response
+
+
+@app.get('/auth/register', response_class=HTMLResponse)
+async def auth_register_page(request: Request, next: str = '') -> HTMLResponse:
+    next_path = _safe_next_path(next)
+    if _current_user(request):
+        return RedirectResponse(url='/', status_code=303)
+    if not settings.allow_self_signup:
+        return _registration_disabled_response(request, next_path=next_path)
+    return render(
+        request,
+        'register.html',
+        {
+            'error': None,
+            'email': '',
+            'next_path': next_path,
+        },
+    )
+
+
+@app.post('/auth/register', response_class=HTMLResponse)
+async def auth_register(
+    request: Request,
+    email: str = Form(default=''),
+    password: str = Form(default=''),
+    confirm_password: str = Form(default=''),
+    next: str = Form(default=''),
+):
+    normalized_email = (email or '').strip().lower()
+    next_path = _safe_next_path(next)
+    if not settings.allow_self_signup:
+        return _registration_disabled_response(request, next_path=next_path)
+    if (password or '') != (confirm_password or ''):
+        return render(
+            request,
+            'register.html',
+            {
+                'error': 'Passwords do not match.',
+                'email': normalized_email,
+                'next_path': next_path,
+            },
+        )
+
+    try:
+        user = auth_store.create_user(email=normalized_email, password=password or '')
+    except ValueError as exc:
+        return render(
+            request,
+            'register.html',
+            {
+                'error': str(exc),
+                'email': normalized_email,
+                'next_path': next_path,
+            },
+        )
+    except Exception as exc:
+        logger.exception('Auth user creation failed: %s', exc)
+        return render(
+            request,
+            'register.html',
+            {
+                'error': 'Account creation is temporarily unavailable. Check server storage and retry.',
+                'email': normalized_email,
+                'next_path': next_path,
+            },
+        )
+
+    if repository.has_legacy_data() and auth_store.count_users() == 1:
+        _safe_index_call(f'migrate_legacy:{user.id}', lambda: repository.migrate_legacy_data_to_user(user.id))
+    _safe_index_call(f'refresh_indexes:{user.id}', lambda: _refresh_user_indexes(user.id))
+
+    response = RedirectResponse(url=next_path or '/', status_code=303)
+    response.set_cookie(key=settings.session_cookie_name, value=session_manager.issue(user.id), **_session_cookie_kwargs())
+    return response
+
+
+@app.post('/auth/logout')
+async def auth_logout():
+    response = RedirectResponse(url='/auth/login', status_code=303)
+    response.delete_cookie(settings.session_cookie_name, path='/')
+    return response
+
+
 def _generate_page_context(*, jd_text: str = '', error: Optional[str] = None, warnings: Optional[list[str]] = None) -> Dict[str, Any]:
+    setup_checklist = _build_setup_checklist()
     return {
         'jd_text': jd_text,
         'error': error,
         'warnings': warnings or [],
-        'base_resume_exists': repository.load_base_resume() is not None,
+        'base_resume_exists': bool(setup_checklist['items'][0]['done']),
         'vault_count': len(repository.list_vault_items()),
+        'setup_checklist': setup_checklist,
     }
 
 
@@ -132,7 +555,7 @@ async def generate_page(request: Request) -> HTMLResponse:
 @app.post('/generate', response_class=HTMLResponse)
 async def generate_tailored_resume(
     request: Request,
-    resume_file: UploadFile = File(...),
+    resume_file: Optional[UploadFile] = File(default=None),
     jd_text: str = Form(default=''),
 ) -> HTMLResponse:
     pasted_jd_text = (jd_text or '').strip()
@@ -153,61 +576,121 @@ async def generate_tailored_resume(
             ),
         )
 
-    if not resume_file.filename:
-        return render(
-            request,
-            'generate.html',
-            _generate_page_context(jd_text=pasted_jd_text, error='Resume file is required.'),
-        )
+    base_resume = repository.load_base_resume()
+    extraction_warnings: list[str] = []
+    has_resume_upload = bool(resume_file and resume_file.filename)
+    if has_resume_upload:
+        assert resume_file is not None
+        suffix = Path(resume_file.filename).suffix.lower()
+        if suffix not in {'.pdf', '.docx', '.txt'}:
+            return render(
+                request,
+                'generate.html',
+                _generate_page_context(
+                    jd_text=pasted_jd_text,
+                    error='Supported resume file types: PDF, DOCX, TXT.',
+                ),
+            )
 
-    suffix = Path(resume_file.filename).suffix.lower()
-    if suffix not in {'.pdf', '.docx', '.txt'}:
+        upload_path = settings.data_dir / 'uploads' / f'{uuid.uuid4().hex}{suffix}'
+        content = await resume_file.read()
+        if len(content) > _max_upload_bytes():
+            return render(
+                request,
+                'generate.html',
+                _generate_page_context(
+                    jd_text=pasted_jd_text,
+                    error=_upload_limit_message(),
+                ),
+            )
+        upload_path.write_bytes(content)
+
+        try:
+            upload_result = public_upload_resume(upload_path, enable_ocr=settings.enable_ocr, llm=llm_service)
+            canonical_payload = upload_result.get('canonical') or upload_result.get('parse_mirror', {}).get('canonical')
+            canonical = CanonicalResume.model_validate(canonical_payload)
+            extraction_warnings = [str(w).strip() for w in upload_result.get('extraction_warnings', []) if str(w).strip()]
+        except Exception as exc:
+            return render(
+                request,
+                'generate.html',
+                _generate_page_context(
+                    jd_text=pasted_jd_text,
+                    error=_with_request_id(request, f'Resume processing failed: {exc}'),
+                ),
+            )
+        finally:
+            try:
+                upload_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        try:
+            repository.save_base_resume(canonical)
+            sync_base_resume_to_vault(repository, canonical)
+            active_user_id = _active_user_id()
+            if active_user_id:
+                auth_store.upsert_base_resume(
+                    user_id=active_user_id,
+                    path=str(repository.base_resume_path_for(active_user_id)),
+                )
+                _refresh_vault_index(active_user_id)
+            base_resume = canonical
+        except Exception as exc:
+            return render(
+                request,
+                'generate.html',
+                _generate_page_context(
+                    jd_text=pasted_jd_text,
+                    error=_with_request_id(request, f'Failed to save base resume: {exc}'),
+                ),
+            )
+
+    if not base_resume:
         return render(
             request,
             'generate.html',
             _generate_page_context(
                 jd_text=pasted_jd_text,
-                error='Supported resume file types: PDF, DOCX, TXT.',
+                error='No base profile loaded. Upload once in Advanced > Resume Upload, then generate from vault only.',
             ),
         )
 
-    upload_path = settings.data_dir / 'uploads' / f'{uuid.uuid4().hex}{suffix}'
-    upload_path.write_bytes(await resume_file.read())
-
-    try:
-        upload_result = public_upload_resume(upload_path, enable_ocr=settings.enable_ocr, llm=llm_service)
-        canonical_payload = upload_result.get('canonical') or upload_result.get('parse_mirror', {}).get('canonical')
-        canonical = CanonicalResume.model_validate(canonical_payload)
-    except Exception as exc:
+    vault_items = repository.list_vault_items()
+    if not vault_items:
         return render(
             request,
             'generate.html',
-            _generate_page_context(jd_text=pasted_jd_text, error=f'Resume processing failed: {exc}'),
-        )
-
-    try:
-        repository.save_base_resume(canonical)
-        sync_base_resume_to_vault(repository, canonical)
-    except Exception as exc:
-        return render(
-            request,
-            'generate.html',
-            _generate_page_context(jd_text=pasted_jd_text, error=f'Failed to save base resume: {exc}'),
+            _generate_page_context(
+                jd_text=pasted_jd_text,
+                error='Vault is empty. Add vault evidence items before generating.',
+            ),
         )
 
     job_id = uuid.uuid4().hex[:12]
     job = JobRecord(job_id=job_id, title='Pasted Job Description', company=None, url=None)
     repository.save_job(job, pasted_jd_text)
+    active_user_id = _active_user_id()
+    if active_user_id:
+        jobs_dir = repository.jobs_dir_for(active_user_id)
+        job_path = ensure_within(jobs_dir, jobs_dir / job_id / 'job.yaml')
+        auth_store.upsert_job(
+            user_id=active_user_id,
+            job_id=job.job_id,
+            title=job.title,
+            company=job.company,
+            url=job.url,
+            path=str(job_path),
+        )
 
     workflow = _run_tailoring_workflow(
-        base_resume=canonical,
+        base_resume=base_resume,
         job_id=job_id,
         jd_text=pasted_jd_text,
         mode=DEFAULT_TAILOR_MODE,
         job_title_hint=job.title,
     )
 
-    extraction_warnings = [str(w).strip() for w in upload_result.get('extraction_warnings', []) if str(w).strip()]
     return render(
         request,
         'tailor_result.html',
@@ -220,6 +703,7 @@ async def advance_page(request: Request) -> HTMLResponse:
     base_resume = repository.load_base_resume()
     vault_items = repository.list_vault_items()
     jobs = repository.list_jobs()
+    setup_checklist = _build_setup_checklist()
     return render(
         request,
         'advanced.html',
@@ -227,6 +711,7 @@ async def advance_page(request: Request) -> HTMLResponse:
             'base_resume_exists': base_resume is not None,
             'vault_count': len(vault_items),
             'job_count': len(jobs),
+            'setup_checklist': setup_checklist,
         },
     )
 
@@ -236,25 +721,14 @@ async def advanced_redirect() -> RedirectResponse:
     return RedirectResponse(url='/advance', status_code=307)
 
 
-@app.get('/advance/dashboard', response_class=HTMLResponse)
-async def dashboard(request: Request) -> HTMLResponse:
-    base_resume = repository.load_base_resume()
-    vault_items = repository.list_vault_items()
-    jobs = repository.list_jobs()
-    return render(
-        request,
-        'dashboard.html',
-        {
-            'base_resume_exists': base_resume is not None,
-            'vault_count': len(vault_items),
-            'job_count': len(jobs),
-        },
-    )
+@app.get('/advance/dashboard')
+async def legacy_dashboard_redirect() -> RedirectResponse:
+    return RedirectResponse(url='/advance', status_code=303)
 
 
 @app.get('/advanced/dashboard')
 async def advanced_dashboard_redirect() -> RedirectResponse:
-    return RedirectResponse(url='/advance/dashboard', status_code=307)
+    return RedirectResponse(url='/advance', status_code=303)
 
 
 @app.get('/audit', response_class=HTMLResponse)
@@ -316,7 +790,21 @@ async def audit_run(
         )
 
     upload_path = settings.data_dir / 'uploads' / f'{uuid.uuid4().hex}{suffix}'
-    upload_path.write_bytes(await resume_file.read())
+    content = await resume_file.read()
+    if len(content) > _max_upload_bytes():
+        return render(
+            request,
+            'audit.html',
+            {
+                'jobs': jobs,
+                'selected_job_id': selected_job_id,
+                'jd_text': pasted_jd_text,
+                'run_render_outputs': run_render_outputs,
+                'error': _upload_limit_message(),
+                'result': None,
+            },
+        )
+    upload_path.write_bytes(content)
 
     try:
         upload_result = public_upload_resume(upload_path, enable_ocr=settings.enable_ocr, llm=llm_service)
@@ -331,10 +819,15 @@ async def audit_run(
                 'selected_job_id': selected_job_id,
                 'jd_text': pasted_jd_text,
                 'run_render_outputs': run_render_outputs,
-                'error': f'Resume audit failed: {exc}',
+                'error': _with_request_id(request, f'Resume audit failed: {exc}'),
                 'result': None,
             },
         )
+    finally:
+        try:
+            upload_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     resolved_jd_text = pasted_jd_text
     jd_source = 'pasted'
@@ -369,7 +862,8 @@ async def audit_run(
     render_artifacts = None
     if run_render_outputs:
         output_job_id = normalize_token(selected_job_id or 'audit') or 'audit'
-        output_root = ensure_within(settings.data_dir / 'outputs', settings.data_dir / 'outputs' / output_job_id)
+        outputs_dir = repository.outputs_dir_for()
+        output_root = ensure_within(outputs_dir, outputs_dir / output_job_id)
         output_root.mkdir(parents=True, exist_ok=True)
         timestamp = datetime_now_stamp()
         output_dir = output_root / timestamp
@@ -473,6 +967,18 @@ async def resume_upload_extract(request: Request, file: UploadFile = File(...)) 
 
     upload_path = settings.data_dir / 'uploads' / f'{uuid.uuid4().hex}{suffix}'
     content = await file.read()
+    if len(content) > _max_upload_bytes():
+        return render(
+            request,
+            'resume_upload.html',
+            {
+                'warnings': warnings,
+                'error': _upload_limit_message(),
+                'field_errors': [],
+                'raw_text': '',
+                'resume_form': None,
+            },
+        )
     upload_path.write_bytes(content)
 
     try:
@@ -487,12 +993,17 @@ async def resume_upload_extract(request: Request, file: UploadFile = File(...)) 
             'resume_upload.html',
             {
                 'warnings': warnings,
-                'error': f'Extraction failed: {exc}',
+                'error': _with_request_id(request, f'Extraction failed: {exc}'),
                 'field_errors': [],
                 'raw_text': '',
                 'resume_form': None,
             },
         )
+    finally:
+        try:
+            upload_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     return render(
         request,
@@ -531,10 +1042,17 @@ async def resume_save(request: Request, canonical_yaml: Optional[str] = Form(def
     try:
         repository.save_base_resume(canonical)
         sync_base_resume_to_vault(repository, canonical)
+        active_user_id = _active_user_id()
+        if active_user_id:
+            auth_store.upsert_base_resume(
+                user_id=active_user_id,
+                path=str(repository.base_resume_path_for(active_user_id)),
+            )
+            _refresh_vault_index(active_user_id)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f'Failed to save/sync resume: {exc}') from exc
 
-    return RedirectResponse(url='/', status_code=303)
+    return RedirectResponse(url='/?flash=resume_saved', status_code=303)
 
 
 @app.post('/resume/sync-vault')
@@ -544,9 +1062,10 @@ async def resume_sync_vault():
         raise HTTPException(status_code=400, detail='Base resume missing. Save base resume first.')
     try:
         sync_base_resume_to_vault(repository, base_resume)
+        _refresh_vault_index(_active_user_id())
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f'Vault sync failed: {exc}') from exc
-    return RedirectResponse(url='/vault', status_code=303)
+    return RedirectResponse(url='/vault?flash=vault_synced', status_code=303)
 
 
 @app.get('/vault', response_class=HTMLResponse)
@@ -600,13 +1119,31 @@ async def vault_ingest_parse(
     if file and file.filename:
         suffix = Path(file.filename).suffix.lower()
         upload_path = settings.data_dir / 'uploads' / f'{uuid.uuid4().hex}{suffix}'
-        upload_path.write_bytes(await file.read())
+        content = await file.read()
+        if len(content) > _max_upload_bytes():
+            return render(
+                request,
+                'vault_ingest.html',
+                {
+                    'error': _upload_limit_message(),
+                    'warnings': warnings,
+                    'source_text': source_text,
+                    'type_hint': type_hint,
+                    'parsed_item': parsed_item,
+                    'raw_text_preview': raw_text_preview,
+                },
+            )
+        upload_path.write_bytes(content)
         try:
             file_text, file_warnings = parse_uploaded_text(upload_path, enable_ocr=settings.enable_ocr)
             warnings.extend(file_warnings)
             if file_text:
                 raw_segments.append(file_text)
         except VaultIngestError as exc:
+            try:
+                upload_path.unlink(missing_ok=True)
+            except Exception:
+                pass
             return render(
                 request,
                 'vault_ingest.html',
@@ -621,6 +1158,11 @@ async def vault_ingest_parse(
             )
 
     if not raw_segments:
+        if upload_path:
+            try:
+                upload_path.unlink(missing_ok=True)
+            except Exception:
+                pass
         return render(
             request,
             'vault_ingest.html',
@@ -640,19 +1182,13 @@ async def vault_ingest_parse(
     try:
         item, parse_warnings = parse_vault_source_text(combined_text, llm=llm_service, type_hint=type_hint)
         warnings.extend(parse_warnings)
-        if upload_path:
-            artifacts = list(item.source_artifacts)
-            path_text = str(upload_path)
-            if path_text not in artifacts:
-                artifacts.append(path_text)
-            item = item.model_copy(update={'source_artifacts': artifacts})
         parsed_item = _vault_item_to_form_payload(item)
     except Exception as exc:
         return render(
             request,
             'vault_ingest.html',
             {
-                'error': f'Vault parsing failed: {exc}',
+                'error': _with_request_id(request, f'Vault parsing failed: {exc}'),
                 'warnings': warnings,
                 'source_text': source_text,
                 'type_hint': type_hint,
@@ -660,6 +1196,12 @@ async def vault_ingest_parse(
                 'raw_text_preview': raw_text_preview,
             },
         )
+    finally:
+        if upload_path:
+            try:
+                upload_path.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     return render(
         request,
@@ -689,7 +1231,18 @@ async def vault_new(request: Request, item_yaml: Optional[str] = Form(default=No
         item = VaultItem.model_validate(parsed)
         item_id = uuid.uuid4().hex
         repository.save_vault_item(item_id, item)
-        return RedirectResponse(url='/vault', status_code=303)
+        active_user_id = _active_user_id()
+        if active_user_id:
+            vault_dir = repository.vault_dir_for(active_user_id)
+            item_path = ensure_within(vault_dir, vault_dir / f'{item_id}.yaml')
+            auth_store.upsert_vault_item(
+                user_id=active_user_id,
+                item_id=item_id,
+                title=item.title,
+                item_type=item.type.value,
+                path=str(item_path),
+            )
+        return RedirectResponse(url='/vault?flash=vault_saved', status_code=303)
     except ValidationError as exc:
         return render(
             request,
@@ -734,7 +1287,18 @@ async def vault_edit(request: Request, item_id: str, item_yaml: Optional[str] = 
             parsed = _parse_vault_form_payload(form)
         item = VaultItem.model_validate(parsed)
         repository.save_vault_item(item_id, item)
-        return RedirectResponse(url='/vault', status_code=303)
+        active_user_id = _active_user_id()
+        if active_user_id:
+            vault_dir = repository.vault_dir_for(active_user_id)
+            item_path = ensure_within(vault_dir, vault_dir / f'{item_id}.yaml')
+            auth_store.upsert_vault_item(
+                user_id=active_user_id,
+                item_id=item_id,
+                title=item.title,
+                item_type=item.type.value,
+                path=str(item_path),
+            )
+        return RedirectResponse(url='/vault?flash=vault_saved', status_code=303)
     except ValidationError as exc:
         return render(
             request,
@@ -760,7 +1324,10 @@ async def vault_delete(item_id: str):
     if not item:
         raise HTTPException(status_code=404, detail='Vault item not found')
     repository.delete_vault_item(item_id)
-    return RedirectResponse(url='/vault', status_code=303)
+    active_user_id = _active_user_id()
+    if active_user_id:
+        auth_store.delete_vault_item(user_id=active_user_id, item_id=item_id)
+    return RedirectResponse(url='/vault?flash=vault_deleted', status_code=303)
 
 
 @app.get('/jobs', response_class=HTMLResponse)
@@ -822,8 +1389,20 @@ async def jobs_ingest(
     job_id = uuid.uuid4().hex[:12]
     job = JobRecord(job_id=job_id, url=url or None, title=title, company=company)
     repository.save_job(job, jd_text)
+    active_user_id = _active_user_id()
+    if active_user_id:
+        jobs_dir = repository.jobs_dir_for(active_user_id)
+        job_path = ensure_within(jobs_dir, jobs_dir / job_id / 'job.yaml')
+        auth_store.upsert_job(
+            user_id=active_user_id,
+            job_id=job.job_id,
+            title=job.title,
+            company=job.company,
+            url=job.url,
+            path=str(job_path),
+        )
 
-    return RedirectResponse(url=f'/jobs/{job_id}', status_code=303)
+    return RedirectResponse(url=f'/jobs/{job_id}?flash=job_ingested', status_code=303)
 
 
 @app.get('/jobs/{job_id}', response_class=HTMLResponse)
@@ -833,7 +1412,7 @@ async def jobs_detail(request: Request, job_id: str) -> HTMLResponse:
         raise HTTPException(status_code=404, detail='Job not found')
     jd_text = repository.get_job_text(job_id)
 
-    output_root = settings.data_dir / 'outputs' / job_id
+    output_root = repository.outputs_dir_for() / job_id
     output_runs = sorted([p for p in output_root.glob('*') if p.is_dir()], reverse=True) if output_root.exists() else []
     latest_output = output_runs[0].name if output_runs else None
     latest_report = None
@@ -857,10 +1436,23 @@ async def jobs_detail(request: Request, job_id: str) -> HTMLResponse:
 
 @app.post('/jobs/{job_id}/jd')
 async def jobs_update_jd(job_id: str, jd_text: str = Form(...)):
-    if not repository.get_job(job_id):
+    job = repository.get_job(job_id)
+    if not job:
         raise HTTPException(status_code=404, detail='Job not found')
     repository.update_job_text(job_id, jd_text)
-    return RedirectResponse(url=f'/jobs/{job_id}', status_code=303)
+    active_user_id = _active_user_id()
+    if active_user_id:
+        jobs_dir = repository.jobs_dir_for(active_user_id)
+        job_path = ensure_within(jobs_dir, jobs_dir / job_id / 'job.yaml')
+        auth_store.upsert_job(
+            user_id=active_user_id,
+            job_id=job.job_id,
+            title=job.title,
+            company=job.company,
+            url=job.url,
+            path=str(job_path),
+        )
+    return RedirectResponse(url=f'/jobs/{job_id}?flash=jd_saved', status_code=303)
 
 
 def _run_tailoring_workflow(
@@ -886,6 +1478,14 @@ def _run_tailoring_workflow(
     match_score = float(match_payload.get('overall_score', 0.0) or 0.0)
 
     output_dir = repository.create_output_dir(job_id)
+    active_user_id = _active_user_id()
+    if active_user_id:
+        auth_store.upsert_output(
+            user_id=active_user_id,
+            job_id=job_id,
+            timestamp=output_dir.name,
+            path=str(output_dir),
+        )
     compile_error: Optional[str] = None
     pdf_exists = False
     ats_pdf_exists = False
@@ -1006,6 +1606,9 @@ def _run_tailoring_workflow(
         'required_skill_evidence_map': [
             item.model_dump(mode='json') for item in tailored.report.required_skill_evidence_map
         ],
+        'high_confidence_exclusions': [
+            item.model_dump(mode='json') for item in tailored.report.high_confidence_exclusions
+        ],
         'job_id': job_id,
         'timestamp': output_dir.name,
         'pdf_exists': pdf_exists,
@@ -1101,6 +1704,7 @@ def _tailor_result_context(
         'missing_required_evidence': workflow['missing_required_evidence'],
         'missing_required_evidence_display': missing_required_evidence_display,
         'required_skill_evidence_map': required_skill_evidence_map,
+        'high_confidence_exclusions': workflow.get('high_confidence_exclusions', []),
         'keywords_covered': workflow['keywords_covered'],
         'keywords_missed': workflow['keywords_missed'],
     }
@@ -1142,6 +1746,20 @@ async def jobs_tailor(
             },
         )
 
+    vault_items = repository.list_vault_items()
+    if not vault_items:
+        return render(
+            request,
+            'job_detail.html',
+            {
+                'job': job,
+                'jd_text': repository.get_job_text(job_id),
+                'error': 'Vault is empty. Add vault evidence items before tailoring.',
+                'latest_output': None,
+                'latest_report': None,
+            },
+        )
+
     jd_text = repository.get_job_text(job_id)
     workflow = _run_tailoring_workflow(
         base_resume=base_resume,
@@ -1158,13 +1776,83 @@ async def jobs_tailor(
     )
 
 
+def _resolve_output_paths(job_id: str, timestamp: str) -> tuple[Path, Path, Path]:
+    output_root = repository.outputs_dir_for()
+    output_dir = ensure_within(output_root, output_root / job_id / timestamp)
+    if not output_dir.exists() or not output_dir.is_dir():
+        raise HTTPException(status_code=404, detail='Output run not found')
+    tex_path = ensure_within(output_dir, output_dir / 'resume.tex')
+    pdf_path = ensure_within(output_dir, output_dir / 'resume.pdf')
+    return output_dir, tex_path, pdf_path
+
+
+@app.get('/outputs/{job_id}/{timestamp}/latex', response_class=HTMLResponse)
+async def output_latex_editor(request: Request, job_id: str, timestamp: str) -> HTMLResponse:
+    _, tex_path, pdf_path = _resolve_output_paths(job_id, timestamp)
+    if not tex_path.exists():
+        raise HTTPException(status_code=404, detail='LaTeX source not found')
+    return render(
+        request,
+        'latex_editor.html',
+        {
+            'job_id': job_id,
+            'timestamp': timestamp,
+            'tex_content': tex_path.read_text(encoding='utf-8'),
+            'pdf_exists': pdf_path.exists(),
+            'save_message': None,
+            'compile_error': None,
+        },
+    )
+
+
+@app.post('/outputs/{job_id}/{timestamp}/latex', response_class=HTMLResponse)
+async def output_latex_editor_save(
+    request: Request,
+    job_id: str,
+    timestamp: str,
+    tex_content: str = Form(...),
+    action: str = Form(default='save_compile'),
+) -> HTMLResponse:
+    output_dir, tex_path, pdf_path = _resolve_output_paths(job_id, timestamp)
+    if not tex_path.exists():
+        raise HTTPException(status_code=404, detail='LaTeX source not found')
+
+    compile_error: Optional[str] = None
+    save_message: Optional[str] = None
+    cleaned_action = (action or '').strip().lower()
+
+    if not tex_content.strip():
+        compile_error = 'LaTeX source cannot be empty.'
+    else:
+        tex_path.write_text(tex_content, encoding='utf-8')
+        save_message = 'Saved LaTeX source.'
+        if cleaned_action == 'save_compile':
+            try:
+                latex_service.compile_resume(output_dir)
+                save_message = 'Saved and recompiled LaTeX source.'
+            except LatexRenderError as exc:
+                compile_error = str(exc)
+
+    return render(
+        request,
+        'latex_editor.html',
+        {
+            'job_id': job_id,
+            'timestamp': timestamp,
+            'tex_content': tex_path.read_text(encoding='utf-8'),
+            'pdf_exists': pdf_path.exists(),
+            'save_message': save_message,
+            'compile_error': compile_error,
+        },
+    )
+
+
 @app.get('/outputs/{job_id}/{timestamp}/resume.pdf')
 async def download_pdf(job_id: str, timestamp: str):
-    output_root = settings.data_dir / 'outputs'
-    target = ensure_within(output_root, output_root / job_id / timestamp / 'resume.pdf')
-    if not target.exists():
+    _, _, pdf_path = _resolve_output_paths(job_id, timestamp)
+    if not pdf_path.exists():
         raise HTTPException(status_code=404, detail='Output PDF not found')
-    return FileResponse(path=target, media_type='application/pdf', filename='resume.pdf')
+    return FileResponse(path=pdf_path, media_type='application/pdf', filename='resume.pdf')
 
 
 @app.get('/outputs/{job_id}/{timestamp}/{artifact}')
@@ -1180,8 +1868,8 @@ async def download_output_artifact(job_id: str, timestamp: str, artifact: str):
     }
     if artifact not in allowed:
         raise HTTPException(status_code=404, detail='Artifact not available')
-    output_root = settings.data_dir / 'outputs'
-    target = ensure_within(output_root, output_root / job_id / timestamp / artifact)
+    output_dir, _, _ = _resolve_output_paths(job_id, timestamp)
+    target = ensure_within(output_dir, output_dir / artifact)
     if not target.exists():
         raise HTTPException(status_code=404, detail='Artifact not found')
     return FileResponse(path=target, media_type=allowed[artifact], filename=artifact)
@@ -1355,11 +2043,20 @@ async def render_outputs(request: Request):
             raise HTTPException(status_code=400, detail='Base resume not found.')
 
     job_id = _clean_payload_text(payload.get('job_id')) or 'manual'
-    output_root = ensure_within(settings.data_dir / 'outputs', settings.data_dir / 'outputs' / normalize_token(job_id or 'manual'))
+    outputs_dir = repository.outputs_dir_for()
+    output_root = ensure_within(outputs_dir, outputs_dir / normalize_token(job_id or 'manual'))
     output_root.mkdir(parents=True, exist_ok=True)
     timestamp = datetime_now_stamp()
     output_dir = output_root / timestamp
     output_dir.mkdir(parents=True, exist_ok=True)
+    active_user_id = _active_user_id()
+    if active_user_id:
+        auth_store.upsert_output(
+            user_id=active_user_id,
+            job_id=normalize_token(job_id or 'manual') or 'manual',
+            timestamp=timestamp,
+            path=str(output_dir),
+        )
 
     prefix = _clean_payload_text(payload.get('filename_prefix'))
     render_result = public_render_outputs(resume, output_dir, filename_prefix=prefix)
@@ -1371,7 +2068,7 @@ async def render_outputs(request: Request):
 
 @app.get('/api/export_bundle/{job_id}/{timestamp}')
 async def export_bundle(job_id: str, timestamp: str):
-    output_root = settings.data_dir / 'outputs'
+    output_root = repository.outputs_dir_for()
     target_dir = ensure_within(output_root, output_root / job_id / timestamp)
     if not target_dir.exists():
         raise HTTPException(status_code=404, detail='Output directory not found')
@@ -1788,3 +2485,62 @@ def datetime_now_stamp() -> str:
 @app.get('/healthz')
 async def healthcheck() -> Dict[str, str]:
     return {'status': 'ok'}
+
+
+def _writable_dir_check(path: Path) -> tuple[bool, Optional[str]]:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / f'.ready-{uuid.uuid4().hex}'
+        probe.write_text('ok', encoding='utf-8')
+        probe.unlink(missing_ok=True)
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+
+@app.get('/readyz')
+async def readiness() -> JSONResponse:
+    checks: Dict[str, Dict[str, Any]] = {}
+    status_ok = True
+
+    writable_targets = {
+        'data_dir': settings.data_dir,
+        'uploads_dir': settings.data_dir / 'uploads',
+        'outputs_dir': settings.data_dir / 'outputs',
+    }
+    for name, path in writable_targets.items():
+        ok, error = _writable_dir_check(path)
+        checks[name] = {'ok': ok}
+        if error:
+            checks[name]['error'] = error
+            status_ok = False
+
+    checks['templates_dir'] = {'ok': settings.templates_dir.exists()}
+    if not checks['templates_dir']['ok']:
+        checks['templates_dir']['error'] = f'Missing path: {settings.templates_dir}'
+        status_ok = False
+
+    static_dir = Path('app/static')
+    checks['static_dir'] = {'ok': static_dir.exists()}
+    if not checks['static_dir']['ok']:
+        checks['static_dir']['error'] = f'Missing path: {static_dir}'
+        status_ok = False
+
+    sqlite_ok = True
+    sqlite_error: Optional[str] = None
+    try:
+        connection = sqlite3.connect(settings.resolved_sqlite_path)
+        try:
+            connection.execute('SELECT 1')
+        finally:
+            connection.close()
+    except Exception as exc:
+        sqlite_ok = False
+        sqlite_error = str(exc)
+        status_ok = False
+    checks['sqlite'] = {'ok': sqlite_ok}
+    if sqlite_error:
+        checks['sqlite']['error'] = sqlite_error
+
+    payload = {'status': 'ok' if status_ok else 'degraded', 'checks': checks}
+    return JSONResponse(status_code=200 if status_ok else 503, content=payload)

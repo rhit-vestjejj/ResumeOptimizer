@@ -1,0 +1,61 @@
+C1 Company Overview
+C1: 1 Contact, 1 Connection, 1 Choice
+
+ 
+
+C1 is the foremost, single-source provider of advanced communications and data technology for business. That means if it's digital, we connect our customers to it -- from phone systems and hardware to computer networks, application development, managed solutions and more. And we're 100% passionate with designing, implementing, managing and supporting our customers' every need from end to end, so that they can focus on what they do best.
+
+ 
+
+So, when it comes to joining a team of IT and communications technology pros who are empowered to do what they do best, your best choice -- your #1 choice -- is C1.
+
+Overview
+Your responsibilities will include:
+
+ 
+
+Collaborating with engineers and scientists to fine-tune open-source and hosted LLM models for specific industry applications in customer experience.
+Assisting with data collection and preparation, ensuring that models are trained on high-quality, relevant datasets.
+Evaluating LLM performance through rigorous testing and analysis, identifying areas for improvement.
+Documenting your findings and learnings clearly and concisely, contributing to knowledge sharing within the team.
+Responsibilities
+To be successful, you should:
+
+Be currently enrolled in a bachelor's or master's degree program in computer science, engineering, or a related field.
+Possess strong proficiency in Python programming and related libraries.
+Demonstrate a keen interest in AI/ML and its potential applications.
+Have excellent communication and collaboration skills, adaptable to both independent and team-based work.
+ 
+
+This internship offers:
+
+Competitive compensation and a stimulating work environment.
+Invaluable hands-on experience in the rapidly evolving field of AI/ML.
+The opportunity to contribute to projects with real-world impact across various industries.
+Mentorship and guidance from experienced professionals in the AI for CX field.
+Additional Information
+Work Environment
+Ability to handle multiple priorities and demands in a fast-paced environment. This job operates in a professional office environment. This role routinely uses standard office equipment such as computers, phones, photocopiers, and filing cabinets.
+
+Physical Environment
+Physical demands described here are representative of those that must be met by a team member to successfully perform the essential functions of this job. Reasonable accommodations may be made to enable individuals with disabilities to perform the essential functions of this job.
+
+Other Duties/Changes
+This job description is not designed to cover or contain a comprehensive listing of all duties, responsibilities or activities that are required of a team member for this job. Duties, responsibilities and activities may change at any time with or without notice. At any point in time, the essential functions and primary duties associated with this position will be the principal, major or most important duties, responsibilities and activities that the employee is expected to perform as determined and directed by C1.
+
+
+
+EEO Statement
+C1 provides equal employment opportunities (EEO) to all team members and applicants for employment opportunities. All qualified applicants will receive consideration for employment, and all team members will be treated with respect to their employment, without regard to race, color, religion, gender, national origin, age, sexual orientation, gender identity, disability or veteran status. For further details, please view the EEO Policy Statement (EEO Policy Statement) and/or the current version of the workplace poster (https://www.eeoc.gov/sites/default/files/2023-06/22-088_EEOC_KnowYourRights6.12ScreenRdr.pdf; https://www.eeoc.gov/poster)
+
+ 
+
+E-Verify:  E-Verify
+
+ 
+
+Right to Work:  Right to Work Poster
+
+Apply for this job online
+Email this job to a friend
+Share on your newsfeed

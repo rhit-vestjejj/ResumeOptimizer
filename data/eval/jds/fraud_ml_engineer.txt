@@ -1,0 +1,18 @@
+Role: Machine Learning Engineer, Fraud
+
+Responsibilities:
+- Build fraud detection models and scoring pipelines.
+- Ship low-latency inference services in production.
+- Monitor model performance and feature quality.
+
+Required skills:
+- Python
+- XGBoost
+- Redis
+- Kafka
+- FastAPI
+- model monitoring
+
+Preferred:
+- PostgreSQL
+- Docker

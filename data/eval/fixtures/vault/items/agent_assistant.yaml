@@ -1,0 +1,21 @@
+type: project
+title: Voice Productivity Assistant
+dates:
+  start: Sep 2025
+  end: Oct 2025
+tags:
+  - llm
+  - agent
+  - productivity
+tech:
+  - Python
+  - FastAPI
+  - OpenAI API
+  - Whisper
+  - Google Calendar API
+bullets:
+  - text: Built a voice assistant that transcribes prompts and routes structured actions for planning tasks.
+  - text: Integrated OpenAI API prompting and tool-calling flows with deterministic guardrails.
+  - text: Implemented FastAPI endpoints for calendar and email automations.
+links: []
+source_artifacts: []

@@ -66,6 +66,8 @@ def test_tailor_integration_both_modes_and_render(tmp_path: Path) -> None:
         assert result.report.chosen_items
         assert all(item.why_included for item in result.report.chosen_items)
         assert all(item.why_included.startswith('Selected as ') for item in result.report.chosen_items)
+        assert all(isinstance(item.score_breakdown, dict) for item in result.report.chosen_items)
+        assert all('ats_score' in item.score_breakdown for item in result.report.chosen_items)
         assert result.report.vault_relevance
         assert all(item.item_id for item in result.report.vault_relevance)
         assert all(item.relevance_score >= 0 for item in result.report.vault_relevance)
@@ -83,6 +85,7 @@ def test_tailor_integration_both_modes_and_render(tmp_path: Path) -> None:
             if evidence.has_evidence:
                 assert evidence.source_title
                 assert evidence.evidence_bullet
+        assert isinstance(result.report.high_confidence_exclusions, list)
         assert len(result.tailored_resume.projects) <= MAX_PROJECT_ITEMS
         assert result.tailored_resume.summary is not None
         assert 'Machine Learning Engineer' in result.tailored_resume.summary

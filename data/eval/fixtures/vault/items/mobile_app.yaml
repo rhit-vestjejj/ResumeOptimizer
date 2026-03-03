@@ -1,0 +1,17 @@
+type: project
+title: Android Habit Tracker
+dates:
+  start: Feb 2025
+  end: Apr 2025
+tags:
+  - mobile
+  - android
+tech:
+  - Kotlin
+  - Android
+  - Firebase
+bullets:
+  - text: Built an Android app for daily habit tracking with push reminders.
+  - text: Implemented Firebase sync and offline caching for mobile usage.
+links: []
+source_artifacts: []

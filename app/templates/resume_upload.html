@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="card">
+<section class="card animate-fadeup">
   <h2>Upload Resume (PDF/DOCX)</h2>
   <form method="post" action="/resume/upload" enctype="multipart/form-data">
     <input type="file" name="file" accept=".pdf,.docx" required />
@@ -19,14 +19,14 @@
 </section>
 
 {% if raw_text %}
-<section class="card">
+<section class="card animate-fadeup" style="animation-delay: 90ms;">
   <h2>Extracted Text Preview</h2>
   <pre class="scroll-box">{{ raw_text }}</pre>
 </section>
 {% endif %}
 
 {% if resume_form %}
-<section class="card">
+<section class="card animate-fadeup" style="animation-delay: 160ms;">
   <h2>Canonical Resume Details</h2>
   <p class="muted">Edit structured fields below. YAML stays internal and is not shown in the UI.</p>
   {% if field_errors %}
@@ -242,7 +242,7 @@
       {% for category in category_rows %}
       <div class="dynamic-row">
         <input type="text" name="skill_category_{{ loop.index0 }}_name" value="{{ category.name }}" placeholder="Category name (e.g., Languages)" />
-        <textarea name="skill_category_{{ loop.index0 }}_values" rows="2" placeholder="Python, Java, SQL">{{ category.values | join('\n') }}</textarea>
+        <textarea name="skill_category_{{ loop.index0 }}_values" rows="2" placeholder="Python, Java, SQL">{{ category.get('values', []) | join('\n') }}</textarea>
         <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
       </div>
       {% endfor %}

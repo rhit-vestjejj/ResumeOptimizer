@@ -1,0 +1,20 @@
+type: project
+title: Payments Reconciliation Service
+dates:
+  start: Jan 2025
+  end: Apr 2025
+tags:
+  - backend
+  - api
+  - reconciliation
+tech:
+  - Python
+  - FastAPI
+  - PostgreSQL
+  - Docker
+bullets:
+  - text: Built FastAPI microservices to reconcile settlement files against event streams.
+  - text: Optimized PostgreSQL queries and background workers to cut reconciliation latency by 42%.
+  - text: Added Docker-based CI checks and deployment guardrails for release reliability.
+links: []
+source_artifacts: []

@@ -1,0 +1,18 @@
+case_id: applied_ai_agent_engineer
+description: Agentic AI role should prioritize assistant, LLM, and API orchestration projects.
+base_resume_path: ../fixtures/base.yaml
+vault_items_dir: ../fixtures/vault/items
+jd_text_path: ../jds/applied_ai_agent_engineer.txt
+expected_selected_ids:
+  - agent_assistant
+  - backend_payments
+  - fraud_ml
+  - cloud_infra
+must_cover_terms:
+  - python
+  - fastapi
+  - openai
+  - llm
+must_not_claim_terms:
+  - salesforce
+mode: HARD_TRUTH

@@ -1,0 +1,17 @@
+Role: IT Automation Support Intern
+
+Responsibilities:
+- Resolve internal support tickets and document fixes.
+- Build scripts to automate ticket triage and user provisioning.
+- Collaborate with IT and security teams on operational issues.
+
+Required skills:
+- PowerShell
+- Jira
+- automation
+- troubleshooting
+- documentation
+
+Preferred:
+- Python
+- ServiceNow

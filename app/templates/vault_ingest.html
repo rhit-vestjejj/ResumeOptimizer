@@ -1,89 +1,107 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="card">
-  <h2>Ingest Vault Item From Notes / Example</h2>
-  <p class="muted">Paste rough notes, old project descriptions, interview transcript snippets, or upload a file. The parser proposes structured fields for review before saving.</p>
+<section class="animate-fadeup rounded-3xl border border-stone-200 bg-white/85 p-6 shadow-sm md:p-8">
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div>
+      <p class="text-xs font-bold uppercase tracking-[0.2em] text-teal-700">Vault</p>
+      <h2 class="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">Ingest Vault Item</h2>
+      <p class="mt-2 max-w-3xl text-sm text-slate-700">Paste rough notes, project blurbs, interview snippets, or upload files. The parser proposes structured fields for final review.</p>
+    </div>
+    <a class="inline-flex items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-stone-100" href="/vault">Back To Vault</a>
+  </div>
 
   {% if error %}
-    <p class="warn-text">{{ error }}</p>
+    <p class="mt-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-900">{{ error }}</p>
   {% endif %}
 
   {% if warnings %}
-    <ul>
+    <ul class="mt-4 list-disc space-y-1 rounded-xl border border-amber-300 bg-amber-50 px-5 py-3 text-sm text-amber-900">
       {% for warning in warnings %}
       <li>{{ warning }}</li>
       {% endfor %}
     </ul>
   {% endif %}
 
-  <form method="post" action="/vault/ingest/parse" enctype="multipart/form-data">
-    <label>Type Hint</label>
-    <select name="type_hint">
-      <option value="project" {% if type_hint == 'project' %}selected{% endif %}>project</option>
-      <option value="job" {% if type_hint == 'job' %}selected{% endif %}>job</option>
-      <option value="club" {% if type_hint == 'club' %}selected{% endif %}>club</option>
-      <option value="coursework" {% if type_hint == 'coursework' %}selected{% endif %}>coursework</option>
-      <option value="award" {% if type_hint == 'award' %}selected{% endif %}>award</option>
-      <option value="skillset" {% if type_hint == 'skillset' %}selected{% endif %}>skillset</option>
-      <option value="other" {% if type_hint == 'other' %}selected{% endif %}>other</option>
-    </select>
+  <form class="mt-5 space-y-4 [&_label]:mb-1 [&_label]:block [&_label]:text-xs [&_label]:font-bold [&_label]:uppercase [&_label]:tracking-wide [&_label]:text-slate-600 [&_input]:block [&_input]:w-full [&_input]:rounded-xl [&_input]:border [&_input]:border-stone-300 [&_input]:bg-white [&_input]:px-3 [&_input]:py-2 [&_input]:text-sm [&_input]:focus:border-teal-500 [&_input]:focus:outline-none [&_input]:focus:ring-2 [&_input]:focus:ring-teal-200 [&_textarea]:block [&_textarea]:w-full [&_textarea]:rounded-xl [&_textarea]:border [&_textarea]:border-stone-300 [&_textarea]:bg-white [&_textarea]:px-3 [&_textarea]:py-2 [&_textarea]:text-sm [&_textarea]:leading-6 [&_textarea]:focus:border-teal-500 [&_textarea]:focus:outline-none [&_textarea]:focus:ring-2 [&_textarea]:focus:ring-teal-200 [&_select]:block [&_select]:w-full [&_select]:rounded-xl [&_select]:border [&_select]:border-stone-300 [&_select]:bg-white [&_select]:px-3 [&_select]:py-2 [&_select]:text-sm [&_select]:focus:border-teal-500 [&_select]:focus:outline-none [&_select]:focus:ring-2 [&_select]:focus:ring-teal-200" method="post" action="/vault/ingest/parse" enctype="multipart/form-data">
+    <div class="grid gap-4 md:grid-cols-[220px_1fr]">
+      <div>
+        <label>Type Hint</label>
+        <select name="type_hint">
+          <option value="project" {% if type_hint == 'project' %}selected{% endif %}>project</option>
+          <option value="job" {% if type_hint == 'job' %}selected{% endif %}>job</option>
+          <option value="club" {% if type_hint == 'club' %}selected{% endif %}>club</option>
+          <option value="coursework" {% if type_hint == 'coursework' %}selected{% endif %}>coursework</option>
+          <option value="award" {% if type_hint == 'award' %}selected{% endif %}>award</option>
+          <option value="skillset" {% if type_hint == 'skillset' %}selected{% endif %}>skillset</option>
+          <option value="other" {% if type_hint == 'other' %}selected{% endif %}>other</option>
+        </select>
+      </div>
+      <div>
+        <label>Optional Upload (PDF, DOCX, TXT, MD, JSON)</label>
+        <input type="file" name="file" accept=".pdf,.docx,.txt,.md,.rst,.rtf,.yaml,.yml,.json" />
+      </div>
+    </div>
 
-    <label>Paste Notes / Example</label>
-    <textarea name="source_text" rows="14" placeholder="Example: Built an internal ETL project in Python...">{{ source_text }}</textarea>
+    <div>
+      <label>Paste Notes / Example</label>
+      <textarea name="source_text" rows="14" placeholder="Example: Built an internal ETL project in Python...">{{ source_text }}</textarea>
+    </div>
 
-    <label>Optional Upload (PDF, DOCX, TXT, MD, JSON)</label>
-    <input type="file" name="file" accept=".pdf,.docx,.txt,.md,.rst,.rtf,.yaml,.yml,.json" />
-
-    <button type="submit">Parse Into Structured Fields</button>
+    <button class="inline-flex items-center justify-center rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-teal-800" type="submit">Parse Into Structured Fields</button>
   </form>
 </section>
 
 {% if raw_text_preview %}
-<section class="card">
-  <h2>Parsed Source Preview</h2>
-  <pre class="scroll-box">{{ raw_text_preview }}</pre>
+<section class="mt-4 animate-fadeup rounded-2xl border border-stone-200 bg-white/80 p-5 shadow-sm" style="animation-delay: 80ms;">
+  <h3 class="text-lg font-bold text-slate-900">Parsed Source Preview</h3>
+  <pre class="mt-3 max-h-72 overflow-auto rounded-xl border border-stone-200 bg-stone-50 p-3 text-sm text-slate-700">{{ raw_text_preview }}</pre>
 </section>
 {% endif %}
 
 {% if parsed_item %}
-<section class="card">
-  <h2>Review Parsed Vault Item</h2>
-  <p class="muted">Edit any fields below, then save.</p>
-  <form method="post" action="/vault/new">
+<section class="mt-4 animate-fadeup rounded-3xl border border-stone-200 bg-white/85 p-6 shadow-sm md:p-8" style="animation-delay: 120ms;">
+  <h3 class="text-2xl font-bold tracking-tight text-slate-900">Review Parsed Vault Item</h3>
+  <p class="mt-2 text-sm text-slate-700">Edit any fields below before saving as a new vault entry.</p>
+  <form class="mt-5 space-y-5" method="post" action="/vault/new">
     {% set item_form = parsed_item %}
     {% include "_vault_item_fields.html" %}
-    <button type="submit">Save As New Vault Item</button>
+    <button class="inline-flex items-center justify-center rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-teal-800" type="submit">Save As New Vault Item</button>
   </form>
 </section>
 
 <template id="vault-bullet-template">
-  <div class="entry-card dynamic-row">
-    <div class="entry-header">
-      <strong>Bullet</strong>
-      <button type="button" class="btn-small btn-muted" data-remove-row>Remove</button>
+  <div class="entry-card dynamic-row rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+    <div class="mb-3 flex items-center justify-between gap-3">
+      <strong class="text-sm text-slate-800">Bullet</strong>
+      <button class="inline-flex rounded-lg bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800 transition hover:bg-rose-200" type="button" data-remove-row>Remove</button>
     </div>
-    <label>Text</label>
-    <input type="text" name="bullet___INDEX___text" placeholder="Built a ... that improved ..." />
-    <div class="grid-two">
+
+    <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Text</label>
+    <input class="block w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200" type="text" name="bullet___INDEX___text" placeholder="Built a ... that improved ..." />
+
+    <div class="mt-3 grid gap-3 md:grid-cols-2">
       <div>
-        <label>Situation</label>
-        <input type="text" name="bullet___INDEX___situation" />
+        <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Situation</label>
+        <input class="block w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200" type="text" name="bullet___INDEX___situation" />
       </div>
       <div>
-        <label>Task</label>
-        <input type="text" name="bullet___INDEX___task" />
+        <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Task</label>
+        <input class="block w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200" type="text" name="bullet___INDEX___task" />
       </div>
       <div>
-        <label>Action</label>
-        <input type="text" name="bullet___INDEX___action" />
+        <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Action</label>
+        <input class="block w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200" type="text" name="bullet___INDEX___action" />
       </div>
       <div>
-        <label>Outcome</label>
-        <input type="text" name="bullet___INDEX___outcome" />
+        <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Outcome</label>
+        <input class="block w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200" type="text" name="bullet___INDEX___outcome" />
       </div>
     </div>
-    <label>Impact</label>
-    <input type="text" name="bullet___INDEX___impact" />
+
+    <div class="mt-3">
+      <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Impact</label>
+      <input class="block w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200" type="text" name="bullet___INDEX___impact" />
+    </div>
   </div>
 </template>
 

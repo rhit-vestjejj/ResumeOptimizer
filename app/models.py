@@ -161,6 +161,10 @@ class SelectedItem(StrictModel):
     title: str
     score: float
     why_included: str = ''
+    matched_required_terms: List[str] = Field(default_factory=list)
+    matched_role_terms: List[str] = Field(default_factory=list)
+    matched_responsibility_terms: List[str] = Field(default_factory=list)
+    score_breakdown: Dict[str, float] = Field(default_factory=dict)
 
 
 class VaultRelevanceItem(StrictModel):
@@ -183,11 +187,21 @@ class RequiredSkillEvidence(StrictModel):
     evidence_bullet: str = ''
 
 
+class HighConfidenceExclusion(StrictModel):
+    source_type: str
+    source_id: str
+    title: str
+    score: float
+    reasons: List[str] = Field(default_factory=list)
+    matched_required_terms: List[str] = Field(default_factory=list)
+
+
 class TailorReport(StrictModel):
     chosen_items: List[SelectedItem] = Field(default_factory=list)
     vault_relevance: List[VaultRelevanceItem] = Field(default_factory=list)
     missing_required_evidence: List[str] = Field(default_factory=list)
     required_skill_evidence_map: List[RequiredSkillEvidence] = Field(default_factory=list)
+    high_confidence_exclusions: List[HighConfidenceExclusion] = Field(default_factory=list)
     keywords_covered: List[str] = Field(default_factory=list)
     keywords_missed: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)

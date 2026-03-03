@@ -1,0 +1,19 @@
+type: project
+title: Cloud Reliability Toolkit
+dates:
+  start: Jul 2025
+  end: Sep 2025
+tags:
+  - cloud
+  - infrastructure
+  - reliability
+tech:
+  - AWS
+  - Terraform
+  - Kubernetes
+  - Docker
+bullets:
+  - text: Provisioned AWS services with Terraform modules and standardized environment baselines.
+  - text: Added Kubernetes deployment policies and reliability checks for production rollouts.
+links: []
+source_artifacts: []

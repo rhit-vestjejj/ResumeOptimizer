@@ -1,57 +1,80 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="card">
-  <h2>ATS Audit Runner</h2>
-  <p class="muted">Runs mirror parsing, linting, canonical checks, JD matching, grounded patch proposals, and ATS-safe output rendering.</p>
-  <form method="post" action="/audit/run" enctype="multipart/form-data">
-    <label>Resume File (PDF / DOCX / TXT)</label>
-    <input type="file" name="resume_file" accept=".pdf,.docx,.txt" required />
+<section class="animate-fadeup rounded-3xl border border-stone-200 bg-white/85 p-6 shadow-sm md:p-8">
+  <p class="text-xs font-bold uppercase tracking-[0.2em] text-teal-700">Diagnostics</p>
+  <h2 class="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">ATS Audit Runner</h2>
+  <p class="mt-2 text-sm text-slate-700">Runs parsing, linting, canonical checks, JD matching, grounded patch proposals, and ATS-safe output rendering.</p>
 
-    <label>Use Existing Job (optional)</label>
-    <select name="job_id">
-      <option value="">None</option>
-      {% for job in jobs %}
-      <option value="{{ job.job_id }}" {% if selected_job_id == job.job_id %}selected{% endif %}>
-        {{ job.job_id }}{% if job.title %} - {{ job.title }}{% endif %}{% if job.company %} ({{ job.company }}){% endif %}
-      </option>
-      {% endfor %}
-    </select>
+  <form class="mt-5 space-y-4 [&_label]:mb-1 [&_label]:block [&_label]:text-xs [&_label]:font-bold [&_label]:uppercase [&_label]:tracking-wide [&_label]:text-slate-600 [&_input]:block [&_input]:w-full [&_input]:rounded-xl [&_input]:border [&_input]:border-stone-300 [&_input]:bg-white [&_input]:px-3 [&_input]:py-2 [&_input]:text-sm [&_input]:focus:border-teal-500 [&_input]:focus:outline-none [&_input]:focus:ring-2 [&_input]:focus:ring-teal-200 [&_textarea]:block [&_textarea]:w-full [&_textarea]:rounded-xl [&_textarea]:border [&_textarea]:border-stone-300 [&_textarea]:bg-white [&_textarea]:px-3 [&_textarea]:py-2 [&_textarea]:text-sm [&_textarea]:leading-6 [&_textarea]:focus:border-teal-500 [&_textarea]:focus:outline-none [&_textarea]:focus:ring-2 [&_textarea]:focus:ring-teal-200 [&_select]:block [&_select]:w-full [&_select]:rounded-xl [&_select]:border [&_select]:border-stone-300 [&_select]:bg-white [&_select]:px-3 [&_select]:py-2 [&_select]:text-sm [&_select]:focus:border-teal-500 [&_select]:focus:outline-none [&_select]:focus:ring-2 [&_select]:focus:ring-teal-200" method="post" action="/audit/run" enctype="multipart/form-data">
+    <div class="grid gap-4 md:grid-cols-2">
+      <div>
+        <label>Resume File (PDF / DOCX / TXT)</label>
+        <input type="file" name="resume_file" accept=".pdf,.docx,.txt" required />
+      </div>
 
-    <label>Job Description Text (optional, overrides selected job)</label>
-    <textarea name="jd_text" rows="10">{{ jd_text }}</textarea>
+      <div>
+        <label>Use Existing Job (optional)</label>
+        <select name="job_id">
+          <option value="">None</option>
+          {% for job in jobs %}
+          <option value="{{ job.job_id }}" {% if selected_job_id == job.job_id %}selected{% endif %}>
+            {{ job.job_id }}{% if job.title %} - {{ job.title }}{% endif %}{% if job.company %} ({{ job.company }}){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
 
-    <label>
-      <input type="checkbox" name="render_outputs" value="1" {% if run_render_outputs %}checked{% endif %} />
+    <div>
+      <label>Job Description Text (optional, overrides selected job)</label>
+      <textarea name="jd_text" rows="10">{{ jd_text }}</textarea>
+    </div>
+
+    <label class="!normal-case !tracking-normal !font-semibold text-slate-700">
+      <input class="mr-2 !w-auto" type="checkbox" name="render_outputs" value="1" {% if run_render_outputs %}checked{% endif %} />
       Render ATS outputs (DOCX, PDF, TXT) and bundle
     </label>
 
-    <button type="submit">Run Audit</button>
+    <button class="inline-flex items-center justify-center rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-teal-800" type="submit">Run Audit</button>
   </form>
+
   {% if error %}
-    <p class="warn-text">{{ error }}</p>
+    <p class="mt-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-900">{{ error }}</p>
   {% endif %}
 </section>
 
 {% if result %}
-<section class="card">
-  <h2>Audit Summary</h2>
-  <p>Parse quality: <strong>{{ result.parse_quality.parse_quality if result.parse_quality else "-" }}</strong></p>
-  <p>Canonical counts:
-    education={{ result.canonical_counts.education }},
-    experience={{ result.canonical_counts.experience }},
-    projects={{ result.canonical_counts.projects }},
-    skill_categories={{ result.canonical_counts.skill_categories }},
-    certifications={{ result.canonical_counts.certifications }}
-  </p>
-  <p>Lint issues: {{ result.lint.issue_count if result.lint else 0 }} (max severity: {{ result.lint.max_severity if result.lint else "none" }})</p>
-  <p>Sensitive findings: {{ result.sensitive_data.count if result.sensitive_data else 0 }}</p>
-  <p>Timeline overlaps: {{ result.timeline_overlaps.count if result.timeline_overlaps else 0 }}</p>
+<section class="mt-4 animate-fadeup rounded-3xl border border-stone-200 bg-white/85 p-6 shadow-sm md:p-8" style="animation-delay: 90ms;">
+  <h3 class="text-2xl font-extrabold tracking-tight text-slate-900">Audit Summary</h3>
+  <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div class="rounded-xl border border-stone-200 bg-stone-50 p-3">
+      <p class="text-xs font-bold uppercase tracking-wide text-slate-600">Parse Quality</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{{ result.parse_quality.parse_quality if result.parse_quality else "-" }}</p>
+    </div>
+    <div class="rounded-xl border border-stone-200 bg-stone-50 p-3">
+      <p class="text-xs font-bold uppercase tracking-wide text-slate-600">Lint Issues</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{{ result.lint.issue_count if result.lint else 0 }} ({{ result.lint.max_severity if result.lint else "none" }})</p>
+    </div>
+    <div class="rounded-xl border border-stone-200 bg-stone-50 p-3">
+      <p class="text-xs font-bold uppercase tracking-wide text-slate-600">Sensitive Findings</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{{ result.sensitive_data.count if result.sensitive_data else 0 }}</p>
+    </div>
+    <div class="rounded-xl border border-stone-200 bg-stone-50 p-3">
+      <p class="text-xs font-bold uppercase tracking-wide text-slate-600">Timeline Overlaps</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{{ result.timeline_overlaps.count if result.timeline_overlaps else 0 }}</p>
+    </div>
+  </div>
+
+  <div class="mt-4 rounded-xl border border-stone-200 bg-stone-50 p-3 text-sm text-slate-700">
+    <p class="font-semibold text-slate-900">Canonical counts</p>
+    <p class="mt-1">education={{ result.canonical_counts.education }}, experience={{ result.canonical_counts.experience }}, projects={{ result.canonical_counts.projects }}, skill_categories={{ result.canonical_counts.skill_categories }}, certifications={{ result.canonical_counts.certifications }}</p>
+  </div>
 </section>
 
 {% if result.extraction_warnings %}
-<section class="card">
-  <h2>Extraction Warnings</h2>
-  <ul>
+<section class="mt-4 rounded-2xl border border-amber-300 bg-amber-50/90 p-5 text-amber-900 shadow-sm">
+  <h3 class="text-lg font-bold">Extraction Warnings</h3>
+  <ul class="mt-2 list-disc space-y-1 pl-5 text-sm">
     {% for warning in result.extraction_warnings %}
       <li>{{ warning }}</li>
     {% endfor %}
@@ -60,107 +83,119 @@
 {% endif %}
 
 {% if result.lint and result.lint.issues %}
-<section class="card">
-  <h2>Lint Issues</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Code</th>
-        <th>Severity</th>
-        <th>Message</th>
-        <th>Recommendation</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for issue in result.lint.issues %}
-      <tr>
-        <td><code>{{ issue.code }}</code></td>
-        <td>{{ issue.severity }}</td>
-        <td>{{ issue.message }}</td>
-        <td>{{ issue.recommendation }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<section class="mt-4 rounded-2xl border border-stone-200 bg-white/85 p-5 shadow-sm">
+  <h3 class="text-lg font-bold text-slate-900">Lint Issues</h3>
+  <div class="mt-3 overflow-hidden rounded-xl border border-stone-200">
+    <table class="min-w-full text-sm">
+      <thead class="bg-stone-100/80 text-left text-xs font-bold uppercase tracking-wide text-slate-600">
+        <tr>
+          <th class="px-3 py-2">Code</th>
+          <th class="px-3 py-2">Severity</th>
+          <th class="px-3 py-2">Message</th>
+          <th class="px-3 py-2">Recommendation</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for issue in result.lint.issues %}
+        <tr class="align-top">
+          <td class="px-3 py-2"><code class="rounded bg-stone-100 px-1.5 py-0.5 text-xs">{{ issue.code }}</code></td>
+          <td class="px-3 py-2">{{ issue.severity }}</td>
+          <td class="px-3 py-2">{{ issue.message }}</td>
+          <td class="px-3 py-2">{{ issue.recommendation }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endif %}
 
-<section class="card">
-  <h2>Validation</h2>
-  {% if result.contact_validation %}
-  <p>Email valid: {{ result.contact_validation.email_valid }}</p>
-  <p>Phone valid: {{ result.contact_validation.phone_valid }}</p>
-  <p>All contact fields valid: {{ result.contact_validation.all_valid }}</p>
-  {% endif %}
-  {% if result.timeline_durations %}
-  <p>Estimated experience years (min): {{ result.timeline_durations.total_experience_years_min }}</p>
-  <p>Estimated experience years (max): {{ result.timeline_durations.total_experience_years_max }}</p>
-  {% endif %}
+<section class="mt-4 rounded-2xl border border-stone-200 bg-white/85 p-5 shadow-sm">
+  <h3 class="text-lg font-bold text-slate-900">Validation</h3>
+  <div class="mt-3 grid gap-3 md:grid-cols-2">
+    {% if result.contact_validation %}
+    <div class="rounded-xl border border-stone-200 bg-stone-50 p-3 text-sm text-slate-700">
+      <p>Email valid: <strong>{{ result.contact_validation.email_valid }}</strong></p>
+      <p class="mt-1">Phone valid: <strong>{{ result.contact_validation.phone_valid }}</strong></p>
+      <p class="mt-1">All contact fields valid: <strong>{{ result.contact_validation.all_valid }}</strong></p>
+    </div>
+    {% endif %}
+    {% if result.timeline_durations %}
+    <div class="rounded-xl border border-stone-200 bg-stone-50 p-3 text-sm text-slate-700">
+      <p>Estimated experience years (min): <strong>{{ result.timeline_durations.total_experience_years_min }}</strong></p>
+      <p class="mt-1">Estimated experience years (max): <strong>{{ result.timeline_durations.total_experience_years_max }}</strong></p>
+    </div>
+    {% endif %}
+  </div>
 </section>
 
 {% if result.parsed_job %}
-<section class="card">
-  <h2>JD Requirements</h2>
-  <p>JD source: <code>{{ result.jd_source }}</code></p>
-  <p>Normalized title: {{ result.parsed_job.normalized_title or "-" }}</p>
-  <p>Years required: {{ result.parsed_job.years_required if result.parsed_job.years_required is not none else "-" }}</p>
-  <p>Required hard skills:
-    {% set req_hard = result.parsed_job.required.skills | map(attribute='canonical_id') | list %}
-    {{ req_hard | join(', ') if req_hard else '-' }}
-  </p>
-  <p>Required soft skills:
-    {% set req_soft = result.parsed_job.required.soft_skills | map(attribute='canonical_id') | list %}
-    {{ req_soft | join(', ') if req_soft else '-' }}
-  </p>
-  <p>Preferred hard skills:
-    {% set pref_hard = result.parsed_job.preferred.skills | map(attribute='canonical_id') | list %}
-    {{ pref_hard | join(', ') if pref_hard else '-' }}
-  </p>
-  <p>Preferred soft skills:
-    {% set pref_soft = result.parsed_job.preferred.soft_skills | map(attribute='canonical_id') | list %}
-    {{ pref_soft | join(', ') if pref_soft else '-' }}
-  </p>
+<section class="mt-4 rounded-2xl border border-stone-200 bg-white/85 p-5 shadow-sm">
+  <h3 class="text-lg font-bold text-slate-900">JD Requirements</h3>
+  <div class="mt-3 grid gap-3 md:grid-cols-2 text-sm text-slate-700">
+    <div class="rounded-xl border border-stone-200 bg-stone-50 p-3">
+      <p>JD source: <code class="rounded bg-stone-100 px-1 py-0.5">{{ result.jd_source }}</code></p>
+      <p class="mt-1">Normalized title: {{ result.parsed_job.normalized_title or "-" }}</p>
+      <p class="mt-1">Years required: {{ result.parsed_job.years_required if result.parsed_job.years_required is not none else "-" }}</p>
+    </div>
+    <div class="rounded-xl border border-stone-200 bg-stone-50 p-3">
+      <p class="font-semibold text-slate-900">Required hard skills</p>
+      {% set req_hard = result.parsed_job.required.skills | map(attribute='canonical_id') | list %}
+      <p class="mt-1">{{ req_hard | join(', ') if req_hard else '-' }}</p>
+      <p class="mt-2 font-semibold text-slate-900">Required soft skills</p>
+      {% set req_soft = result.parsed_job.required.soft_skills | map(attribute='canonical_id') | list %}
+      <p class="mt-1">{{ req_soft | join(', ') if req_soft else '-' }}</p>
+      <p class="mt-2 font-semibold text-slate-900">Preferred hard skills</p>
+      {% set pref_hard = result.parsed_job.preferred.skills | map(attribute='canonical_id') | list %}
+      <p class="mt-1">{{ pref_hard | join(', ') if pref_hard else '-' }}</p>
+      <p class="mt-2 font-semibold text-slate-900">Preferred soft skills</p>
+      {% set pref_soft = result.parsed_job.preferred.soft_skills | map(attribute='canonical_id') | list %}
+      <p class="mt-1">{{ pref_soft | join(', ') if pref_soft else '-' }}</p>
+    </div>
+  </div>
 </section>
 {% endif %}
 
 {% if result.match %}
-<section class="card">
-  <h2>Match Score</h2>
-  <p>Overall score: <strong>{{ result.match.score.overall_score }}</strong></p>
-  <p>Subscores:
-    lexical={{ result.match.score.subscores.lexical_similarity }},
-    semantic={{ result.match.score.subscores.semantic_similarity }},
-    structured={{ result.match.score.subscores.structured_constraints }},
-    hard_skill_alignment={{ result.match.score.subscores.hard_skill_alignment }},
-    soft_skill_alignment={{ result.match.score.subscores.soft_skill_alignment }}
-  </p>
-  <h3>Top Drivers</h3>
-  <ul>
-    {% for driver in result.match.score.top_drivers %}
-      <li><code>{{ driver.type }}</code>: {{ driver.value }}</li>
-    {% endfor %}
-    {% if not result.match.score.top_drivers %}
-      <li>No positive drivers identified.</li>
-    {% endif %}
-  </ul>
-  <h3>Ranked Gaps</h3>
-  <ul>
-    {% for gap in result.match.score.ranked_gaps %}
-      <li>#{{ gap.rank }} <code>{{ gap.type }}</code>: {{ gap.value }} ({{ gap.severity }})</li>
-    {% endfor %}
-    {% if not result.match.score.ranked_gaps %}
-      <li>No gaps identified.</li>
-    {% endif %}
-  </ul>
+<section class="mt-4 rounded-2xl border border-stone-200 bg-white/85 p-5 shadow-sm">
+  <h3 class="text-lg font-bold text-slate-900">Match Score</h3>
+  <p class="mt-2 text-sm text-slate-700">Overall score: <span class="inline-block rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 font-bold text-emerald-900">{{ result.match.score.overall_score }}</span></p>
+  <p class="mt-2 text-sm text-slate-700">Subscores: lexical={{ result.match.score.subscores.lexical_similarity }}, semantic={{ result.match.score.subscores.semantic_similarity }}, structured={{ result.match.score.subscores.structured_constraints }}, hard_skill_alignment={{ result.match.score.subscores.hard_skill_alignment }}, soft_skill_alignment={{ result.match.score.subscores.soft_skill_alignment }}</p>
+
+  <div class="mt-4 grid gap-3 md:grid-cols-2">
+    <div class="rounded-xl border border-stone-200 bg-stone-50 p-3">
+      <h4 class="text-sm font-bold uppercase tracking-wide text-slate-700">Top Drivers</h4>
+      <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+        {% for driver in result.match.score.top_drivers %}
+          <li><code class="rounded bg-stone-100 px-1 py-0.5 text-xs">{{ driver.type }}</code>: {{ driver.value }}</li>
+        {% endfor %}
+        {% if not result.match.score.top_drivers %}
+          <li>No positive drivers identified.</li>
+        {% endif %}
+      </ul>
+    </div>
+
+    <div class="rounded-xl border border-stone-200 bg-stone-50 p-3">
+      <h4 class="text-sm font-bold uppercase tracking-wide text-slate-700">Ranked Gaps</h4>
+      <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+        {% for gap in result.match.score.ranked_gaps %}
+          <li>#{{ gap.rank }} <code class="rounded bg-stone-100 px-1 py-0.5 text-xs">{{ gap.type }}</code>: {{ gap.value }} ({{ gap.severity }})</li>
+        {% endfor %}
+        {% if not result.match.score.ranked_gaps %}
+          <li>No gaps identified.</li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
 </section>
 {% endif %}
 
 {% if result.patches %}
-<section class="card">
-  <h2>Patch Proposals</h2>
-  <ul>
+<section class="mt-4 rounded-2xl border border-stone-200 bg-white/85 p-5 shadow-sm">
+  <h3 class="text-lg font-bold text-slate-900">Patch Proposals</h3>
+  <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-700">
     {% for patch in result.patches.patches %}
-      <li><code>{{ patch.status }}</code> | <code>{{ patch.op }}</code> | {{ patch.reason }}</li>
+      <li><code class="rounded bg-stone-100 px-1 py-0.5 text-xs">{{ patch.status }}</code> | <code class="rounded bg-stone-100 px-1 py-0.5 text-xs">{{ patch.op }}</code> | {{ patch.reason }}</li>
     {% endfor %}
     {% if not result.patches.patches %}
       <li>No patches generated.</li>
@@ -170,31 +205,33 @@
 {% endif %}
 
 {% if result.render_artifacts %}
-<section class="card">
-  <h2>Rendered Artifacts</h2>
+<section class="mt-4 rounded-2xl border border-stone-200 bg-white/85 p-5 shadow-sm">
+  <h3 class="text-lg font-bold text-slate-900">Rendered Artifacts</h3>
   {% if result.render_artifacts.error %}
-    <p class="warn-text">{{ result.render_artifacts.error }}</p>
+    <p class="mt-3 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-900">{{ result.render_artifacts.error }}</p>
   {% else %}
-    {% if result.render_artifacts.ats_pdf_exists %}
-      <p><a href="/outputs/{{ result.render_artifacts.job_id }}/{{ result.render_artifacts.timestamp }}/ats_resume.pdf">Download ATS PDF</a></p>
-    {% endif %}
-    {% if result.render_artifacts.ats_docx_exists %}
-      <p><a href="/outputs/{{ result.render_artifacts.job_id }}/{{ result.render_artifacts.timestamp }}/ats_resume.docx">Download ATS DOCX</a></p>
-    {% endif %}
-    {% if result.render_artifacts.ats_txt_exists %}
-      <p><a href="/outputs/{{ result.render_artifacts.job_id }}/{{ result.render_artifacts.timestamp }}/ats_resume.txt">Download ATS TXT</a></p>
-    {% endif %}
-    {% if result.render_artifacts.bundle_exists %}
-      <p><a href="/api/export_bundle/{{ result.render_artifacts.job_id }}/{{ result.render_artifacts.timestamp }}">Download Bundle (ZIP)</a></p>
-    {% endif %}
-    <p>PDF text-layer check: {{ result.render_artifacts.pdf_text_layer.ok }} (chars={{ result.render_artifacts.pdf_text_layer.extractable_chars }})</p>
+    <div class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      {% if result.render_artifacts.ats_pdf_exists %}
+        <a class="rounded-lg border border-stone-300 bg-stone-50 px-3 py-2 text-center text-sm font-semibold text-slate-800 transition hover:bg-stone-100" href="/outputs/{{ result.render_artifacts.job_id }}/{{ result.render_artifacts.timestamp }}/ats_resume.pdf">Download ATS PDF</a>
+      {% endif %}
+      {% if result.render_artifacts.ats_docx_exists %}
+        <a class="rounded-lg border border-stone-300 bg-stone-50 px-3 py-2 text-center text-sm font-semibold text-slate-800 transition hover:bg-stone-100" href="/outputs/{{ result.render_artifacts.job_id }}/{{ result.render_artifacts.timestamp }}/ats_resume.docx">Download ATS DOCX</a>
+      {% endif %}
+      {% if result.render_artifacts.ats_txt_exists %}
+        <a class="rounded-lg border border-stone-300 bg-stone-50 px-3 py-2 text-center text-sm font-semibold text-slate-800 transition hover:bg-stone-100" href="/outputs/{{ result.render_artifacts.job_id }}/{{ result.render_artifacts.timestamp }}/ats_resume.txt">Download ATS TXT</a>
+      {% endif %}
+      {% if result.render_artifacts.bundle_exists %}
+        <a class="rounded-lg bg-teal-700 px-3 py-2 text-center text-sm font-bold text-white transition hover:bg-teal-800" href="/api/export_bundle/{{ result.render_artifacts.job_id }}/{{ result.render_artifacts.timestamp }}">Download Bundle (ZIP)</a>
+      {% endif %}
+    </div>
+    <p class="mt-3 text-sm text-slate-700">PDF text-layer check: <strong>{{ result.render_artifacts.pdf_text_layer.ok }}</strong> (chars={{ result.render_artifacts.pdf_text_layer.extractable_chars }})</p>
   {% endif %}
 </section>
 {% endif %}
 
-<section class="card">
-  <h2>Extracted Text Preview</h2>
-  <pre class="scroll-box">{{ result.raw_text_preview }}</pre>
+<section class="mt-4 rounded-2xl border border-stone-200 bg-white/85 p-5 shadow-sm">
+  <h3 class="text-lg font-bold text-slate-900">Extracted Text Preview</h3>
+  <pre class="mt-3 max-h-80 overflow-auto rounded-xl border border-stone-200 bg-stone-50 p-3 text-sm text-slate-700">{{ result.raw_text_preview }}</pre>
 </section>
 {% endif %}
 {% endblock %}

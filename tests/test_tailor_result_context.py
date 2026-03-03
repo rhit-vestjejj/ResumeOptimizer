@@ -47,6 +47,16 @@ def test_tailor_result_context_formats_missing_evidence_terms_for_display() -> N
                 'evidence_bullet': '',
             },
         ],
+        'high_confidence_exclusions': [
+            {
+                'source_type': 'vault:project',
+                'source_id': 'vault-x1',
+                'title': 'Close Candidate',
+                'score': 83.1,
+                'reasons': ['Project slots are capped.'],
+                'matched_required_terms': ['postgresql'],
+            }
+        ],
         'keywords_covered': [],
         'keywords_missed': [],
     }
@@ -59,3 +69,4 @@ def test_tailor_result_context_formats_missing_evidence_terms_for_display() -> N
     assert context['required_skill_evidence_map'][0]['required_term_display'] == 'PostgreSQL'
     assert context['required_skill_evidence_map'][0]['source_type_display'] == 'Work'
     assert context['required_skill_evidence_map'][1]['required_term_display'] == 'Kubernetes'
+    assert context['high_confidence_exclusions'][0]['title'] == 'Close Candidate'

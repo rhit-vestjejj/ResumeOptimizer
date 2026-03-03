@@ -1,0 +1,18 @@
+Role: Data Platform Engineer
+
+Responsibilities:
+- Build and maintain ETL workflows for analytics.
+- Orchestrate pipelines and enforce data quality checks.
+- Model warehouse tables and improve query performance.
+
+Required skills:
+- Python
+- Airflow
+- dbt
+- SQL
+- PostgreSQL
+- ETL
+
+Preferred:
+- Docker
+- Kafka

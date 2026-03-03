@@ -1,0 +1,19 @@
+case_id: backend_api_engineer
+description: Backend service role should prioritize API + database + reliability evidence.
+base_resume_path: ../fixtures/base.yaml
+vault_items_dir: ../fixtures/vault/items
+jd_text_path: ../jds/backend_api_engineer.txt
+expected_selected_ids:
+  - backend_payments
+  - data_platform
+  - cloud_infra
+  - fraud_ml
+must_cover_terms:
+  - python
+  - fastapi
+  - postgresql
+  - sql
+  - docker
+must_not_claim_terms:
+  - swift
+mode: HARD_TRUTH

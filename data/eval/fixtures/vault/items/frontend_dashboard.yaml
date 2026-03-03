@@ -1,0 +1,19 @@
+type: project
+title: React Operations Dashboard
+dates:
+  start: Jan 2025
+  end: Mar 2025
+tags:
+  - frontend
+  - dashboard
+  - ux
+tech:
+  - React
+  - TypeScript
+  - Tailwind
+  - Vite
+bullets:
+  - text: Built a React and TypeScript dashboard for operations insights and filtering workflows.
+  - text: Improved frontend performance with code-splitting and typed state management.
+links: []
+source_artifacts: []

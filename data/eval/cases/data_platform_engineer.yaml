@@ -1,0 +1,19 @@
+case_id: data_platform_engineer
+description: Data platform role should select ETL and warehouse evidence.
+base_resume_path: ../fixtures/base.yaml
+vault_items_dir: ../fixtures/vault/items
+jd_text_path: ../jds/data_platform_engineer.txt
+expected_selected_ids:
+  - data_platform
+  - backend_payments
+  - fraud_ml
+  - coursework_ml
+must_cover_terms:
+  - python
+  - airflow
+  - dbt
+  - sql
+  - postgresql
+must_not_claim_terms:
+  - spark
+mode: HARD_TRUTH

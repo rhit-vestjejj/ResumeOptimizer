@@ -7,6 +7,9 @@ __pycache__/
 # generated runtime data
 data/outputs/*
 data/uploads/*
+data/eval/results/*.json
+data/users/*
+data/app.db
 
 # latex build artifacts
 *.aux

@@ -1,31 +1,38 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="card-grid">
-  <article class="card">
-    <h2>Base Resume</h2>
-    <p>Status: {% if base_resume_exists %}<strong>Loaded</strong>{% else %}<strong>Missing</strong>{% endif %}</p>
-    <a href="/resume/upload">Upload / Edit Canonical Resume</a>
-  </article>
-  <article class="card">
-    <h2>Experience Vault</h2>
-    <p>Total items: <strong>{{ vault_count }}</strong></p>
-    <a href="/vault">Manage Vault</a>
-  </article>
-  <article class="card">
-    <h2>Job Postings</h2>
-    <p>Total jobs: <strong>{{ job_count }}</strong></p>
-    <a href="/jobs/new">Ingest New Job</a>
-  </article>
+<section class="animate-fadeup rounded-3xl border border-stone-200 bg-white/85 p-6 shadow-sm md:p-8">
+  <p class="text-xs font-bold uppercase tracking-[0.2em] text-teal-700">Legacy Dashboard</p>
+  <h2 class="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">System Snapshot</h2>
+  <p class="mt-2 text-sm text-slate-700">Quick status and direct links for the original internal setup flow.</p>
+
+  <div class="mt-5 grid gap-3 md:grid-cols-3">
+    <article class="rounded-2xl border px-4 py-4 {% if base_resume_exists %}border-emerald-300 bg-emerald-50/80{% else %}border-amber-300 bg-amber-50/90{% endif %}">
+      <p class="text-xs font-bold uppercase tracking-wide text-slate-600">Base Resume</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{% if base_resume_exists %}Loaded{% else %}Missing{% endif %}</p>
+      <a class="mt-3 inline-flex rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-teal-800" href="/resume/upload">Upload / Edit</a>
+    </article>
+
+    <article class="rounded-2xl border border-sky-300 bg-sky-50/80 px-4 py-4">
+      <p class="text-xs font-bold uppercase tracking-wide text-slate-600">Experience Vault</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{{ vault_count }} items</p>
+      <a class="mt-3 inline-flex rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-teal-800" href="/vault">Manage Vault</a>
+    </article>
+
+    <article class="rounded-2xl border border-indigo-300 bg-indigo-50/80 px-4 py-4">
+      <p class="text-xs font-bold uppercase tracking-wide text-slate-600">Job Postings</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{{ job_count }} tracked</p>
+      <a class="mt-3 inline-flex rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-teal-800" href="/jobs/new">Ingest New Job</a>
+    </article>
+  </div>
 </section>
-<section class="card">
-  <h2>Tailoring Status</h2>
+
+<section class="mt-4 animate-fadeup rounded-2xl border border-stone-200 bg-white/80 p-5 shadow-sm" style="animation-delay: 80ms;">
+  <h3 class="text-lg font-bold text-slate-900">Tailoring Status</h3>
   {% if llm_available %}
-    <p>LLM enabled. Tailoring routes are active.</p>
+    <p class="mt-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">LLM enabled. Tailoring routes are active.</p>
   {% else %}
-    <p class="warn-text">LLM disabled. Set <code>OPENAI_API_KEY</code> to tailor resumes.</p>
+    <p class="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">LLM disabled. Set <code class="rounded bg-amber-100 px-1 py-0.5">OPENAI_API_KEY</code> to tailor resumes.</p>
   {% endif %}
-  {% if token_header %}
-    <p>POST token header: <code>{{ token_header }}</code> (enforced only when <code>RESUME_APP_TOKEN</code> is set).</p>
-  {% endif %}
+
 </section>
 {% endblock %}

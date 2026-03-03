@@ -1,0 +1,22 @@
+type: job
+title: IT Service Desk Intern
+dates:
+  start: May 2024
+  end: Aug 2024
+tags:
+  - role:IT Service Desk Intern
+  - company:Example Corp
+  - location:Remote
+  - support
+  - automation
+tech:
+  - PowerShell
+  - Jira
+  - ServiceNow
+  - Python
+bullets:
+  - text: Resolved 35+ weekly support tickets across enterprise tools and endpoint issues.
+  - text: Automated ticket triage with PowerShell scripts and reduced manual routing time.
+  - text: Documented troubleshooting runbooks for recurring incidents and escalation paths.
+links: []
+source_artifacts: []

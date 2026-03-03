@@ -1,0 +1,20 @@
+Role: Backend API Engineer
+
+Responsibilities:
+- Design and implement backend services in Python.
+- Build and optimize PostgreSQL schemas and SQL queries.
+- Improve service reliability and deployment workflows.
+- Collaborate with cross-functional teams to ship customer-facing APIs.
+
+Required skills:
+- Python
+- FastAPI
+- PostgreSQL
+- SQL
+- Docker
+- CI/CD
+
+Preferred:
+- Kafka
+- Redis
+- Kubernetes

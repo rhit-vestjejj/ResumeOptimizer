@@ -1,4 +1,4 @@
-.PHONY: install run test docker-build docker-up docker-down docker-logs
+.PHONY: install run test eval check docker-build docker-up docker-down docker-logs
 
 PYTHON ?= python3
 VENV_DIR ?= .venv
@@ -15,6 +15,11 @@ run:
 
 test:
 	$(VENV_PYTHON) -m pytest -q
+
+eval:
+	$(VENV_PYTHON) scripts/eval_selection.py
+
+check: test eval
 
 docker-build:
 	$(DOCKER_COMPOSE) build

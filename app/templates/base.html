@@ -3,22 +3,122 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Local Resume Tailor</title>
+  <title>Resume Optimizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            teal: {
+              50: '#eef6ff',
+              100: '#daeaff',
+              200: '#bfdcff',
+              300: '#93c3fb',
+              500: '#2f8ae2',
+              600: '#1f79d5',
+              700: '#0f6edc',
+              800: '#0d5cc2',
+              900: '#0e4c9b',
+            },
+          },
+          fontFamily: {
+            sans: ['Manrope', 'IBM Plex Sans', 'Noto Sans', 'ui-sans-serif', 'sans-serif'],
+            display: ['Sora', 'Manrope', 'ui-sans-serif', 'sans-serif'],
+          },
+          keyframes: {
+            floatsoft: {
+              '0%, 100%': { transform: 'translateY(0px) scale(1)', opacity: 0.34 },
+              '50%': { transform: 'translateY(-20px) scale(1.06)', opacity: 0.5 },
+            },
+            fadeup: {
+              '0%': { opacity: 0, transform: 'translateY(18px)' },
+              '100%': { opacity: 1, transform: 'translateY(0px)' },
+            },
+            pulseglow: {
+              '0%, 100%': { boxShadow: '0 0 0 0 rgba(16, 124, 225, 0.12)' },
+              '50%': { boxShadow: '0 0 0 14px rgba(16, 124, 225, 0)' },
+            },
+          },
+          animation: {
+            floatsoft: 'floatsoft 11s ease-in-out infinite',
+            fadeup: 'fadeup 680ms cubic-bezier(0.2, 0.7, 0.2, 1) both',
+            pulseglow: 'pulseglow 3.6s ease-out infinite',
+          },
+        },
+      },
+    };
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
-<body>
-  <header class="site-header">
-    <h1>Local Resume Tailor</h1>
-    <nav>
-      <a href="/">Generate</a>
-      <a href="/advance">Advanced</a>
-    </nav>
+<body class="lux-body min-h-screen text-slate-800 antialiased">
+  <div class="lux-background pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
+    <div class="lux-grid"></div>
+    <div class="lux-orb lux-orb-a"></div>
+    <div class="lux-orb lux-orb-b"></div>
+    <div class="lux-orb lux-orb-c"></div>
+  </div>
+
+  <header class="lux-header sticky top-0 z-30 border-b border-white/60 bg-white/62 backdrop-blur-xl">
+    <div class="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-3">
+      <a class="lux-brand" href="{% if is_authenticated %}/{% else %}/auth/login{% endif %}">
+        <span class="lux-brand-mark animate-pulseglow"></span>
+        <span>
+          <strong class="block font-display text-base font-bold tracking-tight text-slate-900 md:text-lg">Resume Optimizer</strong>
+          <span class="block text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-sky-700">Vault-first tailoring{% if current_user %} · {{ current_user.email }}{% endif %}</span>
+        </span>
+      </a>
+      <nav class="lux-nav flex items-center gap-2 text-sm font-semibold">
+        {% if is_authenticated %}
+        <a class="lux-nav-link" href="/">Generate</a>
+        <a class="lux-nav-link" href="/advance">Workspace</a>
+        <form class="nav-inline m-0" method="post" action="/auth/logout">
+          <button class="lux-nav-button" type="submit">Logout</button>
+        </form>
+        {% else %}
+        <a class="lux-nav-link" href="/auth/login">Login</a>
+        {% if allow_self_signup %}
+        <a class="lux-nav-button" href="/auth/register">Create account</a>
+        {% endif %}
+        {% endif %}
+      </nav>
+    </div>
   </header>
-  <main>
+
+  <main class="lux-main mx-auto w-full max-w-6xl px-4 pb-14 pt-8 md:pt-10">
+    {% if flash %}
+      <div class="mb-5 rounded-2xl border border-emerald-300 bg-emerald-50/95 px-4 py-3 text-sm text-emerald-900">
+        {{ flash.message }}
+      </div>
+    {% endif %}
     {% if llm_init_error %}
-      <div class="notice warning">LLM init error: {{ llm_init_error }}</div>
+      <div class="lux-alert mb-5 rounded-2xl border border-rose-300 bg-rose-50/95 px-4 py-3 text-sm text-rose-900">
+        <strong>LLM init error:</strong> {{ llm_init_error }}
+      </div>
     {% endif %}
     {% block content %}{% endblock %}
+    <p class="mt-8 text-right text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Request ID {{ request_id }}</p>
   </main>
+
+  <script>
+    (function () {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        return;
+      }
+      var sections = document.querySelectorAll('main > section:not(.animate-fadeup)');
+      sections.forEach(function (section, index) {
+        section.classList.add('lux-reveal');
+        section.style.setProperty('--lux-delay', Math.min(index * 90, 360) + 'ms');
+      });
+      requestAnimationFrame(function () {
+        sections.forEach(function (section) {
+          section.classList.add('is-visible');
+        });
+      });
+    })();
+  </script>
 </body>
 </html>

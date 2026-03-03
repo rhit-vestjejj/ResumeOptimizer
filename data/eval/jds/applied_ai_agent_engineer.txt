@@ -1,0 +1,17 @@
+Role: Applied AI Engineer
+
+Responsibilities:
+- Build LLM-powered assistants and agent workflows.
+- Design prompt orchestration and tool-calling pipelines.
+- Integrate AI services with production APIs.
+
+Required skills:
+- Python
+- FastAPI
+- OpenAI API
+- LLM
+- prompt engineering
+
+Preferred:
+- Whisper
+- Google Calendar API

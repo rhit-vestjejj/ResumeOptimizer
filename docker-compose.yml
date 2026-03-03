@@ -11,6 +11,8 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
       ENABLE_OCR: ${ENABLE_OCR:-0}
       RESUME_APP_TOKEN: ${RESUME_APP_TOKEN:-}
+      ALLOW_SELF_SIGNUP: ${ALLOW_SELF_SIGNUP:-0}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
     volumes:
       - ./data:/app/data
     restart: unless-stopped

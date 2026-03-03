@@ -1,0 +1,19 @@
+type: coursework
+title: Applied ML and Database Coursework
+dates:
+  start: Aug 2023
+  end: May 2024
+tags:
+  - coursework
+  - machine-learning
+  - databases
+tech:
+  - Machine Learning
+  - Statistics
+  - SQL
+  - PostgreSQL
+bullets:
+  - text: Completed graduate coursework in machine learning evaluation and probabilistic modeling.
+  - text: Implemented SQL optimization exercises and relational schema design projects.
+links: []
+source_artifacts: []

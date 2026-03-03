@@ -1,0 +1,15 @@
+case_id: it_automation_support_intern
+description: IT support role should keep service-desk automation evidence in the selected set.
+base_resume_path: ../fixtures/base.yaml
+vault_items_dir: ../fixtures/vault/items
+jd_text_path: ../jds/it_automation_support_intern.txt
+expected_selected_ids:
+  - service_desk
+  - backend_payments
+  - data_platform
+must_cover_terms:
+  - powershell
+  - support
+must_not_claim_terms:
+  - kubernetes
+mode: HARD_TRUTH

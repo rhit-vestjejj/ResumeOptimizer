@@ -4,8 +4,8 @@ Local-only resume tailoring web app for Linux servers, designed to be accessed o
 
 ## What it does
 
-- Upload resume (`PDF`/`DOCX`), extract text, convert to canonical YAML (`data/resume/base.yaml`) as source of truth.
-- Auto-sync canonical resume sections into vault items, then tailor primarily from vault content.
+- Optionally upload/refresh a resume (`PDF`/`DOCX`) to update canonical profile data (`data/resume/base.yaml`).
+- Tailoring selection is vault-only for the MVP flow; vault evidence drives what gets included.
 - Maintain an editable local Experience Vault (`data/vault/items/*.yaml`).
 - Ingest vault items from rough notes or uploaded legacy docs, then review/edit parsed YAML before save.
 - Ingest jobs by URL (`POST /jobs/ingest`) via Playwright + readability; fallback to pasted JD text.
@@ -75,6 +75,12 @@ Local-only resume tailoring web app for Linux servers, designed to be accessed o
 │   │   └── vault_list.html
 │   └── utils.py
 ├── data
+│   ├── eval
+│   │   ├── cases/*.yaml
+│   │   ├── fixtures/base.yaml
+│   │   ├── fixtures/vault/items/*.yaml
+│   │   ├── jds/*.txt
+│   │   └── results/*.json
 │   ├── jobs
 │   ├── outputs
 │   ├── resume
@@ -86,10 +92,13 @@ Local-only resume tailoring web app for Linux servers, designed to be accessed o
 │   └── vault/items
 ├── schemas
 │   ├── canonical_resume.schema.yaml
+│   ├── eval_case.schema.yaml
+│   ├── eval_result.schema.yaml
 │   ├── job_record.schema.yaml
 │   └── vault_item.schema.yaml
 ├── tests
 │   ├── test_ats_engine.py
+│   ├── test_selection_benchmark.py
 │   ├── test_constraints.py
 │   ├── test_integration_tailor.py
 │   ├── test_matching_quality.py
@@ -118,8 +127,15 @@ Create or update `.env` in the project root (same variables as local mode):
 OPENAI_API_KEY=your_key_here
 OPENAI_MODEL=gpt-4.1-mini
 ENABLE_OCR=0
+APP_SECRET_KEY=change_me_to_a_long_random_value
 # Optional:
+# APP_ENV=prod
 # RESUME_APP_TOKEN=change_me
+# SESSION_COOKIE_SECURE=1
+# ALLOW_SELF_SIGNUP=0
+# MAX_UPLOAD_MB=10
+# BOOTSTRAP_USER_EMAIL=admin@example.com
+# BOOTSTRAP_USER_PASSWORD=change_me_please
 ```
 
 Keep `.env` placeholder-only in shared code and never commit real API keys/tokens.
@@ -177,9 +193,35 @@ python3 -m playwright install-deps chromium
 | `OPENAI_MODEL` | No | `gpt-4.1-mini` | OpenAI model name |
 | `ENABLE_OCR` | No | `0` | Enable pytesseract OCR fallback for short PDF extraction |
 | `RESUME_APP_TOKEN` | No | unset | If set, all POST routes require header token |
+| `APP_ENV` | No | `dev` | Runtime environment (`dev`/`test`/`prod`) used for safety validation |
+| `APP_SECRET_KEY` | For auth sessions | `dev-change-me` | Signs login session cookies |
+| `SESSION_COOKIE_NAME` | No | `resume_session` | Auth session cookie name |
+| `SESSION_TTL_SECONDS` | No | `604800` | Session expiration in seconds |
+| `SESSION_COOKIE_SECURE` | No | `0` | Set cookie `Secure` flag (enable in HTTPS prod) |
+| `ALLOW_SELF_SIGNUP` | No | `0` | Allow users to self-register (`1`) or enforce invite-only (`0`) |
+| `MAX_UPLOAD_MB` | No | `10` | Maximum upload size in MB for resume/vault/audit upload routes |
+| `SQLITE_PATH` | No | `data/app.db` | SQLite path for user/auth data |
+| `BOOTSTRAP_USER_EMAIL` | No | unset | Optional startup account bootstrap email |
+| `BOOTSTRAP_USER_PASSWORD` | No | unset | Optional startup account bootstrap password |
 
 If `RESUME_APP_TOKEN` is set, POST requests must include:
 - Header: `X-Resume-Token: <token>`
+
+When `APP_ENV` is set to a non-dev value (for example `prod`), `APP_SECRET_KEY` must be changed from `dev-change-me`.
+
+### Invite-only account provisioning
+
+Default mode is invite-only (`ALLOW_SELF_SIGNUP=0`). Create friend accounts with:
+
+```bash
+.venv/bin/python scripts/create_user.py --email friend@example.com
+```
+
+Or provide password inline:
+
+```bash
+.venv/bin/python scripts/create_user.py --email friend@example.com --password "change_me_please"
+```
 
 ## Run
 
@@ -199,6 +241,9 @@ Server listens on:
 
 ## App routes
 
+- `GET/POST /auth/login` sign in
+- `GET/POST /auth/register` create account (only when `ALLOW_SELF_SIGNUP=1`)
+- `POST /auth/logout` sign out
 - `GET /` dashboard
 - `GET/POST /resume/upload` upload + parse resume
 - `POST /resume/save` save canonical resume YAML + sync into vault
@@ -218,6 +263,8 @@ Server listens on:
 - `POST /jobs/{job_id}/tailor` run tailoring
 - `GET /outputs/{job_id}/{timestamp}/resume.pdf` download output PDF
 - `GET /outputs/{job_id}/{timestamp}/{artifact}` download generated artifacts (`ats_resume.pdf`, `ats_resume.docx`, `ats_resume.txt`, `bundle.zip`, etc.)
+- `GET /healthz` lightweight liveness check
+- `GET /readyz` readiness check (paths + sqlite connectivity)
 
 ### ATS extension API routes
 
@@ -236,16 +283,43 @@ Server listens on:
 
 ## Data layout
 
-- Canonical resume: `data/resume/base.yaml`
-- Vault items: `data/vault/items/<item_id>.yaml` (user-created UUIDs plus deterministic `base_*` IDs from base-resume sync)
-- Jobs: `data/jobs/<job_id>/job.yaml` + `data/jobs/<job_id>/jd.txt`
-- Tailored outputs: `data/outputs/<job_id>/<timestamp>/resume.tex|resume.pdf|report.json`
+- User-scoped canonical resume: `data/users/<user_id>/resume/base.yaml`
+- User-scoped vault items: `data/users/<user_id>/vault/items/<item_id>.yaml`
+- User-scoped jobs: `data/users/<user_id>/jobs/<job_id>/job.yaml` + `jd.txt`
+- User-scoped outputs: `data/users/<user_id>/outputs/<job_id>/<timestamp>/resume.tex|resume.pdf|report.json`
+- SQLite auth/user DB: `data/app.db` (override with `SQLITE_PATH`)
 
 ## Tests
 
 ```bash
 make test
 ```
+
+Run the full local release gate (tests + benchmark):
+
+```bash
+make check
+```
+
+Run offline selection benchmark gate:
+
+```bash
+make eval
+```
+
+`make eval` runs labeled cases from `data/eval/cases`, computes:
+- selection precision/recall/F1
+- required-term coverage
+- unsupported-claim rate
+
+and writes a timestamped JSON result file to `data/eval/results/`.
+
+Default aggregate gate thresholds:
+- precision `>= 0.72`
+- recall `>= 0.82`
+- F1 `>= 0.76`
+- required-term coverage `>= 0.90`
+- unsupported-claim rate `<= 0.00`
 
 Includes:
 - schema validation
@@ -254,9 +328,28 @@ Includes:
 - one-page pruning by bullet caps
 - integration tailoring in both modes + render + mock PDF compile
 
+## Release Gate
+
+- CI workflow: `.github/workflows/ci.yml` runs `make test` and `make eval` on push and pull request.
+- Local equivalent before deploying: `make check`.
+
 ## Notes
 
-- No authentication by default (assumes trusted Tailscale network).
+- Session-based authentication is required for app and API routes (except `/auth/*` and static assets).
+- Startup bootstrap uses FastAPI lifespan handlers (not deprecated startup events).
 - If OpenAI key is missing, app runs but tailoring is disabled with clear UI errors.
 - LaTeX output filename is always `resume.pdf` inside each output run directory.
 - Project sectioning: use `section: projects` or `section: minor_projects` on canonical projects, or add vault tag `section:minor_projects`.
+
+## Troubleshooting
+
+- Login/signup confusion: if self-signup is disabled (`ALLOW_SELF_SIGNUP=0`), new users must be provisioned via `scripts/create_user.py`.
+- Upload errors: ensure files are under `MAX_UPLOAD_MB` and in supported formats.
+- Tailoring disabled: set `OPENAI_API_KEY` and restart.
+- Debug support: include the request ID shown in the app footer when reporting issues.
+
+## Known limitations (MVP)
+
+- No background worker queue; heavy operations run inline per request.
+- Invite-only provisioning is CLI-based (no admin UI yet).
+- External scraping quality depends on source website structure and anti-bot defenses.
