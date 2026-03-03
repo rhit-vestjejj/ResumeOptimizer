@@ -104,6 +104,10 @@ SUMMARY_TERM_DISPLAY = {
     'ml': 'machine learning',
     'ai': 'AI',
     'llm': 'LLM',
+    'python': 'Python',
+    'java': 'Java',
+    'javascript': 'JavaScript',
+    'htmlcss': 'HTML/CSS',
     'sql': 'SQL',
     'xgboost': 'XGBoost',
     'pytorch': 'PyTorch',
@@ -125,7 +129,7 @@ SUMMARY_BANNED_TERMS = {
     'results', 'immediately', 'deliver', 'delivered', 'building', 'built', 'work', 'works', 'working', 'experience',
     'role', 'roles', 'company', 'strong', 'ability', 'responsibility', 'responsibilities', 'requirement',
     'requirements', 'people', 'communication', 'collaboration', 'automate', 'automation', 'automations',
-    'data', 'analytics', 'analysis',
+    'data', 'analytics', 'analysis', 'desk', 'st', 'louis', 'support', 'technical',
 }
 
 SUMMARY_ALLOWED_GENERIC_TERMS = {
@@ -313,9 +317,6 @@ def _is_summary_term(term: str) -> bool:
 def _structured_resume_terms(resume: CanonicalResume) -> List[str]:
     terms: List[str] = []
 
-    for entry in resume.experience:
-        terms.extend(_canonicalize_terms(tokenize(entry.title)))
-
     for project in resume.projects:
         terms.extend(_canonicalize_terms(tokenize(' '.join(project.tech))))
 
@@ -323,7 +324,52 @@ def _structured_resume_terms(resume: CanonicalResume) -> List[str]:
         for skill in skills:
             terms.extend(_canonicalize_terms(tokenize(skill)))
 
+    # Fall back to bullet-derived terms when structured tech/skills are sparse.
+    if not terms:
+        for entry in resume.experience:
+            terms.extend(_canonicalize_terms(tokenize(' '.join(entry.bullets))))
+        for project in resume.projects:
+            terms.extend(_canonicalize_terms(tokenize(' '.join(project.bullets))))
+
     return unique_preserve_order(terms)
+
+
+def _is_truncated_bullet_text(text: str) -> bool:
+    cleaned = _normalize_spacing(text).lower()
+    if not cleaned:
+        return True
+    if cleaned.endswith((',', ';', ':', '-', '(')):
+        return True
+    trailing_words = {'and', 'or', 'with', 'to', 'for', 'in', 'of', 'from', 'by'}
+    last_word = cleaned.split()[-1] if cleaned.split() else ''
+    return last_word in trailing_words
+
+
+def _is_project_title_viable(title: str) -> bool:
+    cleaned = _normalize_spacing(title)
+    lowered = cleaned.lower()
+    if not cleaned:
+        return False
+    if lowered.startswith(('tech:', 'tools:', 'stack:')):
+        return False
+    tokens = tokenize(cleaned)
+    if len(tokens) < 2:
+        return False
+    if cleaned.endswith('.') and len(tokens) <= 6:
+        return False
+    return True
+
+
+def _project_entry_is_viable(project: ProjectEntry) -> bool:
+    if not _is_project_title_viable(project.name):
+        return False
+    bullets = [_normalize_spacing(bullet) for bullet in project.bullets if _normalize_spacing(bullet)]
+    if len(bullets) < MIN_PROJECT_BULLETS:
+        return False
+    complete_bullets = [bullet for bullet in bullets if not _is_truncated_bullet_text(bullet)]
+    if not complete_bullets:
+        return False
+    return True
 
 
 def _collect_summary_terms(resume: CanonicalResume, jd: JDAnalysis, limit: int = 5) -> List[str]:
@@ -2488,7 +2534,7 @@ def expand_resume_with_projects(
 
     candidates: List[Tuple[str, ProjectEntry, float]] = []
     for project in base_resume.projects:
-        if len([bullet for bullet in project.bullets if bullet.strip()]) < MIN_PROJECT_BULLETS:
+        if not _project_entry_is_viable(project):
             continue
         key = normalize_token(project.name)
         marker = f'project:{key}'
@@ -2516,6 +2562,8 @@ def expand_resume_with_projects(
             bullets=bullets,
             section=section,
         )
+        if not _project_entry_is_viable(project):
+            continue
         score = score_lookup.get(key, 0.0)
         candidates.append((marker, project, score))
 

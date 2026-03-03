@@ -2285,6 +2285,14 @@ async def _execute_extension_tailor_run(
             mode=DEFAULT_TAILOR_MODE,
             job_title_hint=job_title_hint or None,
         )
+        if not bool(workflow.get('pdf_exists')):
+            compile_error = str(workflow.get('compile_error') or '').strip()
+            if compile_error:
+                raise RuntimeError(f'Tailoring finished but resume.pdf was not generated: {compile_error}')
+            raise RuntimeError(
+                'Tailoring finished but resume.pdf was not generated. '
+                'Check LaTeX dependencies or RENDERER_URL configuration.'
+            )
         auth_store.update_extension_run(
             run_id=run_id,
             status='succeeded',
@@ -2652,6 +2660,24 @@ async def extension_tailor_run_status(request: Request, run_id: str):
     if run is None:
         raise HTTPException(status_code=404, detail='Run not found.')
 
+    if run.status == 'succeeded' and run.output_timestamp:
+        outputs_root = repository.outputs_dir_for(user_id)
+        pdf_path = ensure_within(outputs_root, outputs_root / run.job_id / run.output_timestamp / 'resume.pdf')
+        if not pdf_path.exists():
+            message = (
+                'Run completed but resume.pdf is missing. '
+                'Check LaTeX dependencies or RENDERER_URL configuration.'
+            )
+            auth_store.update_extension_run(
+                run_id=run.run_id,
+                status='failed',
+                error=message,
+                output_timestamp=None,
+            )
+            run = auth_store.get_extension_run(run_id=run_id, user_id=user_id)
+            if run is None:
+                raise HTTPException(status_code=404, detail='Run not found.')
+
     payload: Dict[str, Any] = {
         'run_id': run.run_id,
         'job_id': run.job_id,
@@ -2678,7 +2704,10 @@ async def extension_tailor_run_pdf(request: Request, run_id: str):
     outputs_root = repository.outputs_dir_for(user_id)
     pdf_path = ensure_within(outputs_root, outputs_root / run.job_id / run.output_timestamp / 'resume.pdf')
     if not pdf_path.exists():
-        raise HTTPException(status_code=404, detail='Output PDF not found.')
+        raise HTTPException(
+            status_code=409,
+            detail='Run completed but resume.pdf is missing. Check LaTeX dependencies or renderer configuration.',
+        )
     return FileResponse(path=pdf_path, media_type='application/pdf', filename=f'resume-{run.job_id}.pdf')
 
 

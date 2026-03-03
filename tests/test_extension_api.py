@@ -255,3 +255,33 @@ def test_extension_tailor_run_requires_jd_text(tmp_path: Path, monkeypatch: pyte
     with pytest.raises(HTTPException) as exc_info:
         asyncio.run(app_main.extension_create_tailor_run(request))
     assert exc_info.value.status_code == 400
+
+
+def test_extension_status_downgrades_succeeded_when_pdf_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_extension_app(tmp_path, monkeypatch)
+    user = app_main.auth_store.create_user(email='missing-pdf@example.com', password='supersecure123')
+    run = app_main.auth_store.create_extension_run(user_id=user.id, job_id='jobmissingpdf')
+    app_main.auth_store.update_extension_run(
+        run_id=run.run_id,
+        status='succeeded',
+        error=None,
+        output_timestamp='20260303-230000',
+    )
+
+    status_request = _request(
+        method='GET',
+        path=f'/api/ext/v1/tailor-runs/{run.run_id}',
+        state={'current_user_id': user.id},
+    )
+    status_response = asyncio.run(app_main.extension_tailor_run_status(status_request, run.run_id))
+    payload = _json_response_body(status_response)
+    assert payload['status'] == 'failed'
+    assert 'resume.pdf is missing' in payload['error']
+
+    stored = app_main.auth_store.get_extension_run(run_id=run.run_id, user_id=user.id)
+    assert stored is not None
+    assert stored.status == 'failed'
+    assert stored.output_timestamp is None

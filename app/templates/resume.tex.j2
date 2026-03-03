@@ -33,8 +33,13 @@
 {% if resume.education %}
 \section*{Education}
 {% for edu in resume.education %}
-\textbf{ {{- edu.school | latex_escape -}} } \hfill {{ (edu.dates.start or '') | latex_escape -}}{% if edu.dates.start and edu.dates.end %} -- {% endif %}{{ (edu.dates.end or '') | latex_escape -}}\\
+{% set edu_start = (edu.dates.start or '') %}
+{% set edu_end = (edu.dates.end or '') %}
+{% set edu_has_dates = edu_start or edu_end %}
+\textbf{ {{- edu.school | latex_escape -}} }{% if edu_has_dates %} \hfill {{ edu_start | latex_escape -}}{% if edu_start and edu_end %} -- {% endif %}{{ edu_end | latex_escape -}}{% endif %}\\
+{% if edu.degree or edu.major or edu.minors or edu.gpa %}
 {{- edu.degree | latex_escape -}}{% if edu.major %} in {{ edu.major | latex_escape -}}{% endif %}{% if edu.minors %}; Minors: {{ edu.minors | join(', ') | latex_escape -}}{% endif %}{% if edu.gpa %}; GPA: {{ edu.gpa | latex_escape -}}{% endif %}\\
+{% endif %}
 {% if edu.coursework %}
 \textit{Coursework}: {{ edu.coursework | join(', ') | latex_escape -}}\\
 {% endif %}
@@ -44,11 +49,17 @@
 {% if resume.experience %}
 \section*{Experience}
 {% for exp in resume.experience %}
-\textbf{ {{- exp.company | latex_escape -}} } \hfill {{ (exp.dates.start or '') | latex_escape -}}{% if exp.dates.start and exp.dates.end %} -- {% endif %}{{ (exp.dates.end or '') | latex_escape -}}\\
-{{- exp.title | latex_escape -}}{% if exp.location %}, {{ exp.location | latex_escape -}}{% endif %}\\
+{% set exp_start = (exp.dates.start or '') %}
+{% set exp_end = (exp.dates.end or '') %}
+{% set exp_has_dates = exp_start or exp_end %}
+{% set exp_company = (exp.company or '') %}
+{% set exp_title = (exp.title or '') %}
+{% set exp_heading = exp_company if exp_company else exp_title %}
+\textbf{ {{- exp_heading | latex_escape -}} }{% if exp_has_dates %} \hfill {{ exp_start | latex_escape -}}{% if exp_start and exp_end %} -- {% endif %}{{ exp_end | latex_escape -}}{% endif %}\\
+{% if exp_title and exp_title != exp_heading %}{{- exp_title | latex_escape -}}{% if exp.location %}, {{ exp.location | latex_escape -}}{% endif %}\\{% endif %}
 \begin{itemize}
 {% for bullet in exp.bullets %}
-\item {{ bullet | latex_escape -}}
+\item {{ bullet | latex_escape }}
 {% endfor %}
 \end{itemize}
 {% endfor %}
@@ -85,7 +96,7 @@
 {% if project.tech %}\textit{Tech}: {{ project.tech | join(', ') | latex_escape -}}\\{% endif %}
 \begin{itemize}
 {% for bullet in project.bullets %}
-\item {{ bullet | latex_escape -}}
+\item {{ bullet | latex_escape }}
 {% endfor %}
 \end{itemize}
 {% endif %}
@@ -100,7 +111,7 @@
 {% if project.tech %}\textit{Tech}: {{ project.tech | join(', ') | latex_escape -}}\\{% endif %}
 \begin{itemize}
 {% for bullet in project.bullets %}
-\item {{ bullet | latex_escape -}}
+\item {{ bullet | latex_escape }}
 {% endfor %}
 \end{itemize}
 {% endif %}

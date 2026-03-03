@@ -11,6 +11,9 @@ const jdInput = document.getElementById('jdText');
 let activeRunId = '';
 let pollTimer = null;
 let capturedSourceUrl = '';
+let pollAttempts = 0;
+const POLL_INTERVAL_MS = 3500;
+const MAX_POLL_ATTEMPTS = 90;
 
 function setStatus(message, kind = '') {
   statusEl.textContent = message;
@@ -29,6 +32,7 @@ function stopPolling() {
     clearInterval(pollTimer);
     pollTimer = null;
   }
+  pollAttempts = 0;
 }
 
 function callBackground(type, payload = {}) {
@@ -113,6 +117,13 @@ async function refreshRunStatus() {
     setMeta(`Run ${activeRunId.slice(0, 8)} status: ${status}.`);
 
     if (status === 'queued' || status === 'running') {
+      pollAttempts += 1;
+      if (pollAttempts >= MAX_POLL_ATTEMPTS) {
+        setStatus('Tailoring is taking longer than expected. You can click Run Tailoring to check again.', 'err');
+        runBtn.disabled = false;
+        stopPolling();
+        return;
+      }
       setStatus(`Tailoring ${status}...`);
       return;
     }
@@ -146,6 +157,7 @@ async function runTailoring() {
   runBtn.disabled = true;
   setRunReady(false);
   stopPolling();
+  pollAttempts = 0;
 
   try {
     const run = await callBackground('api:createRun', {
@@ -160,7 +172,7 @@ async function runTailoring() {
     }
     setStatus('Tailoring queued. Polling status...');
     setMeta(`Run ${activeRunId.slice(0, 8)} created.`);
-    pollTimer = setInterval(refreshRunStatus, 2200);
+    pollTimer = setInterval(refreshRunStatus, POLL_INTERVAL_MS);
     await refreshRunStatus();
   } catch (error) {
     setStatus(error.message, 'err');

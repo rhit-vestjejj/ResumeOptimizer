@@ -33,7 +33,7 @@ class LatexService:
     def render_resume(self, resume: CanonicalResume, output_dir: Path, template_name: str = 'resume.tex.j2') -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
         template = self.env.get_template(template_name)
-        tex_content = template.render(resume=resume)
+        tex_content = template.render(resume=_sanitize_resume_for_render(resume))
         tex_path = output_dir / 'resume.tex'
         tex_path.write_text(tex_content, encoding='utf-8')
         return tex_path
@@ -120,6 +120,102 @@ def _extract_latex_error_excerpt(log_path: Path) -> str:
         return '\n---\n'.join(matches[-3:])
 
     return '\n'.join(lines[-60:])
+
+
+def _normalize_space(value: str) -> str:
+    return re.sub(r'\s+', ' ', str(value or '')).strip()
+
+
+def _split_identity_links(raw_link: str) -> list[str]:
+    raw = _normalize_space(raw_link)
+    if not raw:
+        return []
+    parts = [segment.strip() for segment in raw.split('|')]
+    cleaned_parts = [segment for segment in parts if segment]
+    return cleaned_parts or [raw]
+
+
+def _normalize_link_value(link: str) -> str:
+    cleaned = _normalize_space(link)
+    if not cleaned:
+        return ''
+    if cleaned.startswith(('http://', 'https://', 'mailto:')):
+        return cleaned
+    if cleaned.startswith('www.'):
+        return f'https://{cleaned}'
+    if re.fullmatch(r'[a-z0-9][a-z0-9.-]+\.[a-z]{2,}(/[^\s]*)?', cleaned.lower()):
+        return f'https://{cleaned}'
+    return cleaned
+
+
+def _balanced_parentheses(text: str) -> bool:
+    depth = 0
+    for char in text:
+        if char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
+
+
+def _dedupe_skill_entries(entries: list[str]) -> list[str]:
+    cleaned = [_normalize_space(entry) for entry in entries if _normalize_space(entry)]
+    unique: list[str] = []
+    seen: set[str] = set()
+    for entry in cleaned:
+        key = entry.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(entry)
+
+    filtered: list[str] = []
+    for entry in unique:
+        lowered = entry.lower()
+        if not _balanced_parentheses(entry):
+            has_balanced_container = any(
+                lowered != other.lower()
+                and lowered in other.lower()
+                and _balanced_parentheses(other)
+                for other in unique
+            )
+            if has_balanced_container:
+                continue
+        if len(entry) >= 12:
+            is_fragment_of_longer = any(
+                lowered != other.lower() and lowered in other.lower() and len(other) > len(entry) + 8
+                for other in unique
+            )
+            if is_fragment_of_longer:
+                continue
+        filtered.append(entry)
+    return filtered
+
+
+def _sanitize_resume_for_render(resume: CanonicalResume) -> CanonicalResume:
+    cloned = CanonicalResume.model_validate(resume.model_dump())
+
+    normalized_links: list[str] = []
+    seen_links: set[str] = set()
+    for raw_link in cloned.identity.links:
+        for part in _split_identity_links(raw_link):
+            normalized = _normalize_link_value(part)
+            if not normalized:
+                continue
+            key = normalized.lower()
+            if key in seen_links:
+                continue
+            seen_links.add(key)
+            normalized_links.append(normalized)
+    cloned.identity.links = normalized_links[:5]
+
+    sanitized_categories: dict[str, list[str]] = {}
+    for category, entries in cloned.skills.categories.items():
+        sanitized_categories[category] = _dedupe_skill_entries(list(entries))
+    cloned.skills.categories = sanitized_categories
+    return cloned
 
 
 def _compile_resume_remote(*, renderer_url: str, tex_path: Path, pdf_path: Path) -> Path:
