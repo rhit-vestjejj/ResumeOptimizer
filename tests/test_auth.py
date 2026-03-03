@@ -219,7 +219,7 @@ def test_logout_clears_session_cookie(tmp_path: Path, monkeypatch: pytest.Monkey
     assert 'path=/' in attributes
 
 
-def test_register_invite_only_mode_returns_forbidden(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_register_page_available_even_when_signup_flag_false(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_main_for_auth_routes(
         tmp_path,
         monkeypatch,
@@ -229,8 +229,7 @@ def test_register_invite_only_mode_returns_forbidden(tmp_path: Path, monkeypatch
     )
 
     response = asyncio.run(app_main.auth_register_page(_get_request('/auth/register')))
-    assert response.status_code == 403
-    assert 'invite-only' in str(response.context.get('error', '')).lower()
+    assert response.status_code == 200
 
 
 def test_max_upload_bytes_uses_setting_value(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -15,13 +15,9 @@
     <input id="password" name="password" type="password" autocomplete="current-password" required />
     <button type="submit" class="mt-2">Sign in</button>
   </form>
-  {% if allow_self_signup %}
   <p class="mt-4 text-sm text-slate-600">
     Need an account?
     <a href="/auth/register" class="font-semibold text-teal-800 underline">Create one</a>
   </p>
-  {% else %}
-  <p class="mt-4 text-sm text-slate-600">Accounts are invite-only for this release.</p>
-  {% endif %}
 </section>
 {% endblock %}

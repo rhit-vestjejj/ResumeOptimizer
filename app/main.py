@@ -138,7 +138,6 @@ def render(request: Request, template_name: str, context: Dict[str, Any]) -> HTM
         'llm_init_error': llm_init_error,
         'current_user': current_user,
         'is_authenticated': bool(current_user),
-        'allow_self_signup': settings.allow_self_signup,
         'request_id': _request_id(request),
         'flash': _flash_message(request),
     }
@@ -312,20 +311,6 @@ def _build_setup_checklist() -> Dict[str, Any]:
     return {'items': items, 'completed_count': completed_count, 'total': len(items)}
 
 
-def _registration_disabled_response(request: Request, *, next_path: str) -> HTMLResponse:
-    response = render(
-        request,
-        'login.html',
-        {
-            'error': 'Account creation is invite-only. Ask the app owner to create your account.',
-            'email': '',
-            'next_path': next_path,
-        },
-    )
-    response.status_code = 403
-    return response
-
-
 def _safe_index_call(action: str, func) -> None:
     try:
         func()
@@ -459,8 +444,6 @@ async def auth_register_page(request: Request, next: str = '') -> HTMLResponse:
     next_path = _safe_next_path(next)
     if _current_user(request):
         return RedirectResponse(url='/', status_code=303)
-    if not settings.allow_self_signup:
-        return _registration_disabled_response(request, next_path=next_path)
     return render(
         request,
         'register.html',
@@ -482,8 +465,6 @@ async def auth_register(
 ):
     normalized_email = (email or '').strip().lower()
     next_path = _safe_next_path(next)
-    if not settings.allow_self_signup:
-        return _registration_disabled_response(request, next_path=next_path)
     if (password or '') != (confirm_password or ''):
         return render(
             request,
