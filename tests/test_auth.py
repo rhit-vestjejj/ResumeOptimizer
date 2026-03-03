@@ -134,6 +134,19 @@ def test_settings_reject_non_positive_upload_limit() -> None:
         Settings(max_upload_mb=0)
 
 
+def test_settings_uses_tmp_data_dir_on_vercel(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('VERCEL', '1')
+    settings = Settings()
+    assert settings.data_dir == Path('/tmp/data')
+    assert settings.resolved_sqlite_path == Path('/tmp/data/app.db')
+
+
+def test_settings_moves_relative_sqlite_path_under_tmp_on_vercel(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('VERCEL', '1')
+    settings = Settings(sqlite_path=Path('db/runtime.db'))
+    assert settings.resolved_sqlite_path == Path('/tmp/data/db/runtime.db')
+
+
 def test_register_sets_expected_cookie_flags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _configure_main_for_auth_routes(
         tmp_path,

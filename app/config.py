@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import os
 from pathlib import Path
 from typing import Optional
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _is_vercel_runtime() -> bool:
+    return bool((os.getenv('VERCEL') or '').strip())
 
 
 class Settings(BaseSettings):
@@ -66,6 +71,23 @@ class Settings(BaseSettings):
             raise ValueError('APP_ENV must not be empty.')
         if normalized_env not in {'dev', 'development', 'test'} and self.app_secret_key == 'dev-change-me':
             raise ValueError('APP_SECRET_KEY must be changed when APP_ENV is not dev/test.')
+        return self
+
+    @model_validator(mode='after')
+    def _apply_serverless_paths(self) -> 'Settings':
+        if not _is_vercel_runtime():
+            return self
+
+        if not self.data_dir.is_absolute():
+            self.data_dir = Path('/tmp') / self.data_dir
+
+        if not self.sqlite_path.is_absolute():
+            parts = self.sqlite_path.parts
+            if parts and parts[0] == 'data':
+                remainder = Path(*parts[1:]) if len(parts) > 1 else Path('app.db')
+                self.sqlite_path = self.data_dir / remainder
+            else:
+                self.sqlite_path = self.data_dir / self.sqlite_path
         return self
 
     @property
