@@ -81,10 +81,9 @@ async function captureFromActiveTab() {
   if (!activeTab || !activeTab.id) {
     throw new Error('No active tab detected.');
   }
+  const tabId = activeTab.id;
 
-  const response = await chrome.tabs.sendMessage(activeTab.id, {
-    type: 'resumeOptimizer.extractJob',
-  });
+  const response = await requestExtractionFromTab(tabId);
 
   if (!response || !response.ok) {
     throw new Error(response?.error || 'Could not extract job content from this page.');
@@ -105,6 +104,37 @@ async function captureFromActiveTab() {
   setMeta(`Captured ${wordCount} words from ${payload.sourceHost || 'current page'} (${payload.extractor || 'fallback'}).`);
   setStatus('Capture complete. Review then run tailoring.', 'ok');
   runBtn.disabled = false;
+}
+
+async function requestExtractionFromTab(tabId) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, {
+      type: 'resumeOptimizer.extractJob',
+    });
+  } catch (error) {
+    const message = String(error?.message || '');
+    const missingReceiver = message.includes('Receiving end does not exist');
+    if (!missingReceiver) {
+      throw error;
+    }
+
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['content/extractor.js'],
+      });
+    } catch (injectError) {
+      const injectMessage = String(injectError?.message || injectError || '');
+      if (injectMessage) {
+        throw new Error(`Could not inject extractor on this page: ${injectMessage}`);
+      }
+      throw new Error('Could not inject extractor on this page.');
+    }
+
+    return chrome.tabs.sendMessage(tabId, {
+      type: 'resumeOptimizer.extractJob',
+    });
+  }
 }
 
 async function refreshRunStatus() {
