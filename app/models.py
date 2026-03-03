@@ -130,6 +130,31 @@ class JobRecord(StrictModel):
     scraped_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
+class UserProfile(StrictModel):
+    user_id: str
+    display_name: str = ''
+    email: str = ''
+    phone: str = ''
+    location: str = ''
+    links: List[str] = Field(default_factory=list)
+    headline: str = ''
+    target_roles: List[str] = Field(default_factory=list)
+    years_experience: str = ''
+    onboarding_state: str = 'not_started'
+    completed_steps: List[str] = Field(default_factory=list)
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    @field_validator('onboarding_state')
+    @classmethod
+    def validate_onboarding_state(cls, value: str) -> str:
+        normalized = (value or '').strip().lower()
+        allowed = {'not_started', 'in_progress', 'completed'}
+        if normalized not in allowed:
+            raise ValueError('onboarding_state must be one of: not_started, in_progress, completed')
+        return normalized
+
+
 class TailorMode(str, Enum):
     HARD_TRUTH = 'HARD_TRUTH'
     FUCK_IT = 'FUCK_IT'

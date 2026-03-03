@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Resume Optimizer</title>
+    <style>
+      :root {
+        --bg: #f4f6fb;
+        --panel: #ffffff;
+        --ink: #14213d;
+        --accent: #ff6b35;
+        --accent-dark: #db4f22;
+        --muted: #6b7280;
+        --ok: #0f9d58;
+        --warn: #c0392b;
+      }
+      body {
+        margin: 0;
+        width: 360px;
+        background: radial-gradient(circle at top right, #d9e3ff, var(--bg) 46%);
+        font: 13px/1.4 "Segoe UI", "Avenir Next", sans-serif;
+        color: var(--ink);
+      }
+      .wrap {
+        padding: 14px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid #d9deeb;
+        border-radius: 12px;
+        padding: 12px;
+        box-shadow: 0 6px 18px rgba(20, 33, 61, 0.08);
+      }
+      h1 {
+        margin: 0;
+        font-size: 16px;
+      }
+      .sub {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .status {
+        margin-top: 8px;
+        font-weight: 600;
+      }
+      .status.ok {
+        color: var(--ok);
+      }
+      .status.err {
+        color: var(--warn);
+      }
+      .grid {
+        margin-top: 10px;
+        display: grid;
+        gap: 8px;
+      }
+      label {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      input,
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #cfd7ea;
+        border-radius: 8px;
+        padding: 8px;
+        font: inherit;
+        background: #fbfcff;
+        color: var(--ink);
+      }
+      textarea {
+        min-height: 86px;
+        resize: vertical;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      button {
+        border: 0;
+        border-radius: 9px;
+        background: var(--accent);
+        color: #fff;
+        padding: 9px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:hover {
+        background: var(--accent-dark);
+      }
+      button.secondary {
+        background: #e4e9f8;
+        color: var(--ink);
+      }
+      button[disabled] {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .actions {
+        margin-top: 10px;
+        display: grid;
+        gap: 8px;
+      }
+      .meta {
+        margin-top: 8px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>Resume Optimizer</h1>
+        <div class="sub">Capture this page and launch tailoring.</div>
+        <div id="status" class="status">Idle</div>
+
+        <div class="actions">
+          <button id="captureBtn" type="button">Capture Job From Page</button>
+          <div class="row">
+            <button id="runBtn" type="button" disabled>Run Tailoring</button>
+            <button id="downloadBtn" type="button" class="secondary" disabled>Download PDF</button>
+          </div>
+          <button id="optionsBtn" type="button" class="secondary">Options</button>
+        </div>
+
+        <div class="grid">
+          <div>
+            <label for="jobTitle">Job Title</label>
+            <input id="jobTitle" type="text" placeholder="Extracted from page" />
+          </div>
+          <div>
+            <label for="company">Company</label>
+            <input id="company" type="text" placeholder="Extracted from page" />
+          </div>
+          <div>
+            <label for="jdText">Job Description</label>
+            <textarea id="jdText" placeholder="Use capture, then edit if needed."></textarea>
+          </div>
+        </div>
+
+        <div id="meta" class="meta">No capture yet.</div>
+      </div>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

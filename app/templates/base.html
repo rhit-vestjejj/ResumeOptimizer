@@ -73,8 +73,15 @@
       </a>
       <nav class="lux-nav flex items-center gap-2 text-sm font-semibold">
         {% if is_authenticated %}
+        {% if enable_profile_rewrite %}
+        <a class="lux-nav-link" href="/">Home</a>
+        <a class="lux-nav-link" href="/profile">Profile</a>
+        <a class="lux-nav-link" href="/jobs">Jobs</a>
+        <a class="lux-nav-link" href="/vault">Vault</a>
+        {% else %}
         <a class="lux-nav-link" href="/">Generate</a>
         <a class="lux-nav-link" href="/advance">Workspace</a>
+        {% endif %}
         <form class="nav-inline m-0" method="post" action="/auth/logout">
           <button class="lux-nav-button" type="submit">Logout</button>
         </form>

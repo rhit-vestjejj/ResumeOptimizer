@@ -9,6 +9,7 @@ from starlette.requests import Request
 
 from app import main as app_main
 from app.config import Settings
+from app.models import CanonicalResume, Identity
 from app.services.auth import AuthStore, SessionManager
 from app.services.repository import DataRepository
 
@@ -129,6 +130,16 @@ def test_settings_parses_allow_self_signup_from_string() -> None:
     assert settings.allow_self_signup is True
 
 
+def test_settings_parses_enable_profile_rewrite_from_string() -> None:
+    settings = Settings(enable_profile_rewrite='1')
+    assert settings.enable_profile_rewrite is True
+
+
+def test_settings_parses_enable_extension_api_from_string() -> None:
+    settings = Settings(enable_extension_api='1')
+    assert settings.enable_extension_api is True
+
+
 def test_settings_reject_non_positive_upload_limit() -> None:
     with pytest.raises(ValueError, match='MAX_UPLOAD_MB'):
         Settings(max_upload_mb=0)
@@ -242,3 +253,87 @@ def test_max_upload_bytes_uses_setting_value(tmp_path: Path, monkeypatch: pytest
     )
     settings.max_upload_mb = 3
     assert app_main._max_upload_bytes() == 3 * 1024 * 1024
+
+
+def test_auth_store_profile_round_trip(tmp_path: Path) -> None:
+    store = AuthStore(tmp_path / 'auth.db')
+    user = store.create_user(email='profile@example.com', password='supersecure123')
+
+    profile = store.ensure_profile_for_user(user=user)
+    assert profile.user_id == user.id
+    assert profile.email == user.email
+    assert profile.onboarding_state == 'not_started'
+
+    profile.display_name = 'Profile User'
+    profile.completed_steps = ['basics']
+    profile.onboarding_state = 'in_progress'
+    store.upsert_profile(profile)
+
+    loaded = store.get_profile(user.id)
+    assert loaded is not None
+    assert loaded.display_name == 'Profile User'
+    assert 'basics' in loaded.completed_steps
+
+    marked = store.mark_onboarding_step(user_id=user.id, step='resume_import')
+    assert marked is not None
+    assert 'resume_import' in marked.completed_steps
+
+
+def test_auth_store_profile_seeded_from_resume(tmp_path: Path) -> None:
+    store = AuthStore(tmp_path / 'auth.db')
+    user = store.create_user(email='seeded@example.com', password='supersecure123')
+    resume = CanonicalResume(
+        identity=Identity(
+            name='Seeded User',
+            email='seeded@example.com',
+            phone='555-123-9876',
+            location='Chicago, IL',
+            links=['https://example.com'],
+        ),
+        summary='Backend engineer focused on reliability.',
+    )
+
+    profile = store.ensure_profile_for_user(user=user, seed_resume=resume)
+    assert profile.display_name == 'Seeded User'
+    assert profile.phone == '555-123-9876'
+    assert 'resume_import' in profile.completed_steps
+
+
+def test_auth_store_extension_api_key_round_trip(tmp_path: Path) -> None:
+    store = AuthStore(tmp_path / 'auth.db')
+    user = store.create_user(email='ext@example.com', password='supersecure123')
+    assert store.get_extension_api_key_status(user_id=user.id) is None
+
+    first_key = store.regenerate_extension_api_key(user_id=user.id)
+    first_status = store.get_extension_api_key_status(user_id=user.id)
+    assert first_status is not None
+    assert first_status.is_active is True
+    assert store.resolve_user_id_from_extension_api_key(first_key) == user.id
+
+    second_key = store.regenerate_extension_api_key(user_id=user.id)
+    assert second_key != first_key
+    assert store.resolve_user_id_from_extension_api_key(first_key) is None
+    assert store.resolve_user_id_from_extension_api_key(second_key) == user.id
+
+
+def test_auth_store_extension_run_lifecycle(tmp_path: Path) -> None:
+    store = AuthStore(tmp_path / 'auth.db')
+    user = store.create_user(email='run@example.com', password='supersecure123')
+    run = store.create_extension_run(user_id=user.id, job_id='job123')
+    assert run.status == 'queued'
+    assert run.output_timestamp is None
+
+    store.update_extension_run(run_id=run.run_id, status='running')
+    running = store.get_extension_run(run_id=run.run_id, user_id=user.id)
+    assert running is not None
+    assert running.status == 'running'
+
+    store.update_extension_run(
+        run_id=run.run_id,
+        status='succeeded',
+        output_timestamp='20260303-010203',
+    )
+    complete = store.get_extension_run(run_id=run.run_id, user_id=user.id)
+    assert complete is not None
+    assert complete.status == 'succeeded'
+    assert complete.output_timestamp == '20260303-010203'

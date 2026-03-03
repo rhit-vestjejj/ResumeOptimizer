@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -43,6 +46,10 @@ class LatexService:
         if mock_compile or os.getenv('RESUME_MOCK_COMPILE') == '1':
             pdf_path.write_bytes(b'%PDF-1.4\n% mock pdf\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n')
             return pdf_path
+
+        renderer_url = (os.getenv('RENDERER_URL') or '').strip()
+        if renderer_url:
+            return _compile_resume_remote(renderer_url=renderer_url, tex_path=tex_path, pdf_path=pdf_path)
 
         latexmk = shutil.which('latexmk')
         if not latexmk:
@@ -113,3 +120,39 @@ def _extract_latex_error_excerpt(log_path: Path) -> str:
         return '\n---\n'.join(matches[-3:])
 
     return '\n'.join(lines[-60:])
+
+
+def _compile_resume_remote(*, renderer_url: str, tex_path: Path, pdf_path: Path) -> Path:
+    if not tex_path.exists():
+        raise LatexRenderError('LaTeX source file not found for remote render.')
+
+    endpoint = f'{renderer_url.rstrip("/")}/render/pdf'
+    payload = {'tex': tex_path.read_text(encoding='utf-8'), 'assets': {}}
+    request = urllib_request.Request(
+        endpoint,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            'Content-Type': 'application/json',
+            'Accept': 'application/pdf',
+        },
+        method='POST',
+    )
+
+    try:
+        with urllib_request.urlopen(request, timeout=90) as response:
+            pdf_bytes = response.read()
+    except urllib_error.HTTPError as exc:
+        body = exc.read().decode('utf-8', errors='ignore')
+        raise LatexRenderError(f'Remote renderer returned HTTP {exc.code}: {body[-2000:]}')
+    except urllib_error.URLError as exc:
+        raise LatexRenderError(f'Failed to reach remote renderer {endpoint}: {exc.reason}')
+    except Exception as exc:
+        raise LatexRenderError(f'Remote renderer request failed: {exc}')
+
+    if not pdf_bytes.startswith(b'%PDF'):
+        raise LatexRenderError('Remote renderer response was not a valid PDF payload.')
+
+    pdf_path.write_bytes(pdf_bytes)
+    if not pdf_path.exists():
+        raise LatexRenderError('Remote renderer did not produce resume.pdf')
+    return pdf_path

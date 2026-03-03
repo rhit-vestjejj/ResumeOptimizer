@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     enable_ocr: bool = Field(default=False, alias='ENABLE_OCR')
     resume_app_token: Optional[str] = Field(default=None, alias='RESUME_APP_TOKEN')
-    allow_self_signup: bool = Field(default=False, alias='ALLOW_SELF_SIGNUP')
+    allow_self_signup: bool = Field(default=True, alias='ALLOW_SELF_SIGNUP')
     max_upload_mb: int = Field(default=10, alias='MAX_UPLOAD_MB')
 
     openai_api_key: Optional[str] = Field(default=None, alias='OPENAI_API_KEY')
@@ -44,8 +44,17 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = Field(default=False, alias='SESSION_COOKIE_SECURE')
     bootstrap_user_email: Optional[str] = Field(default=None, alias='BOOTSTRAP_USER_EMAIL')
     bootstrap_user_password: Optional[str] = Field(default=None, alias='BOOTSTRAP_USER_PASSWORD')
+    enable_profile_rewrite: bool = Field(default=True, alias='ENABLE_PROFILE_REWRITE')
+    enable_extension_api: bool = Field(default=True, alias='ENABLE_EXTENSION_API')
+    extension_allowed_origins: str = Field(default='', alias='EXTENSION_ALLOWED_ORIGINS')
 
-    @field_validator('session_cookie_secure', 'allow_self_signup', mode='before')
+    @field_validator(
+        'session_cookie_secure',
+        'allow_self_signup',
+        'enable_profile_rewrite',
+        'enable_extension_api',
+        mode='before',
+    )
     @classmethod
     def _parse_bool_like(cls, value):
         if isinstance(value, str):

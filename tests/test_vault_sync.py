@@ -54,7 +54,7 @@ def test_sync_base_resume_to_vault_creates_and_prunes(tmp_path: Path) -> None:
 
     resume = _sample_resume()
     first = sync_base_resume_to_vault(repo, resume)
-    assert first.created >= 4
+    assert first.created >= 3
 
     items = repo.list_vault_items()
     ids = {item_id for item_id, _ in items}
@@ -64,6 +64,30 @@ def test_sync_base_resume_to_vault_creates_and_prunes(tmp_path: Path) -> None:
     resume.projects = []
     second = sync_base_resume_to_vault(repo, resume)
     assert second.deleted >= 1
+
+
+def test_sync_base_resume_to_vault_limits_projects_to_four(tmp_path: Path) -> None:
+    settings = Settings(data_dir=tmp_path)
+    settings.ensure_directories()
+    repo = DataRepository(settings)
+
+    resume = _sample_resume()
+    resume.projects = [
+        ProjectEntry(name='Project One Jan 2025 – Mar 2025', tech=[], bullets=[], section='projects'),
+        ProjectEntry(name='Tech: Python, FastAPI', tech=[], bullets=['Fragment'], section='projects'),
+        ProjectEntry(name='project fragment with no metadata.', tech=[], bullets=['Fragment'], section='projects'),
+        ProjectEntry(name='Project Two Apr 2025 – Jun 2025', tech=[], bullets=[], section='projects'),
+        ProjectEntry(name='Project Three Jul 2025 – Sep 2025', tech=[], bullets=[], section='projects'),
+        ProjectEntry(name='Project Four Oct 2025 – Dec 2025', tech=[], bullets=[], section='projects'),
+        ProjectEntry(name='Project Five Jan 2026 – Feb 2026', tech=[], bullets=[], section='projects'),
+    ]
+
+    sync_base_resume_to_vault(repo, resume)
+    project_items = [(item_id, item) for item_id, item in repo.list_vault_items() if item_id.startswith('base_proj_')]
+    assert len(project_items) == 4
+    titles = {item.title for _, item in project_items}
+    assert 'Tech: Python, FastAPI' not in titles
+    assert 'project fragment with no metadata.' not in titles
 
 
 def test_build_candidate_pool_prefers_vault_items() -> None:

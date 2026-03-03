@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 import logging
 import re
@@ -11,13 +12,15 @@ from urllib.parse import quote
 
 import yaml
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from app.config import Settings, get_settings
-from app.models import CanonicalResume, JobRecord, TailorMode, VaultItem
+from app.models import CanonicalResume, JobRecord, TailorMode, UserProfile, VaultItem
 from app.public_api import (
     apply_patches as public_apply_patches,
     build_canonical as public_build_canonical,
@@ -78,6 +81,16 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title='Local Resume Tailor', version='1.0.0', lifespan=_lifespan)
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
 templates = Jinja2Templates(directory='app/templates')
+extension_origins = [item.strip() for item in settings.extension_allowed_origins.split(',') if item.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=extension_origins,
+    allow_origin_regex=r'chrome-extension://.*',
+    allow_methods=['GET', 'POST', 'OPTIONS'],
+    allow_headers=['Authorization', 'Content-Type', settings.request_token_header],
+    allow_credentials=False,
+)
+
 DEFAULT_TAILOR_MODE = TailorMode.HARD_TRUTH
 TERM_DISPLAY_OVERRIDES: Dict[str, str] = {
     'ml': 'Machine Learning',
@@ -99,6 +112,35 @@ TERM_DISPLAY_OVERRIDES: Dict[str, str] = {
 }
 UPPERCASE_DISPLAY_TERMS = {'ai', 'llm', 'nlp', 'sql', 'api', 'etl', 'aws', 'gcp', 'dbt'}
 logger = logging.getLogger(__name__)
+GUIDED_PROFILE_STEPS: tuple[Dict[str, str], ...] = (
+    {
+        'id': 'basics',
+        'label': 'Profile Basics',
+        'description': 'Confirm your identity and contact details.',
+        'href': '/profile/step/basics',
+    },
+    {
+        'id': 'resume_import',
+        'label': 'Resume Import',
+        'description': 'Upload and parse your latest resume into canonical data.',
+        'href': '/profile/step/resume_import',
+    },
+    {
+        'id': 'evidence',
+        'label': 'Evidence Vault',
+        'description': 'Add at least one evidence item so tailoring has proof.',
+        'href': '/profile/step/evidence',
+    },
+    {
+        'id': 'first_job',
+        'label': 'First Job',
+        'description': 'Ingest a role and run your first tailored output.',
+        'href': '/profile/step/first_job',
+    },
+)
+REQUIRED_SETUP_STEP_IDS = {'basics', 'resume_import', 'evidence'}
+EXTENSION_ROUTE_PREFIX = '/api/ext/v1/'
+EXTENSION_RUN_TASKS: Dict[str, asyncio.Task] = {}
 
 
 def _request_id(request: Request) -> str:
@@ -122,6 +164,8 @@ def _flash_message(request: Request) -> Optional[Dict[str, str]]:
         'vault_deleted': 'Vault item deleted.',
         'job_ingested': 'Job description ingested and ready to tailor.',
         'jd_saved': 'Job description text saved.',
+        'profile_saved': 'Profile basics saved.',
+        'profile_resume_imported': 'Resume imported and profile data refreshed.',
     }
     message = mapping.get(key)
     if not message:
@@ -140,6 +184,7 @@ def render(request: Request, template_name: str, context: Dict[str, Any]) -> HTM
         'is_authenticated': bool(current_user),
         'request_id': _request_id(request),
         'flash': _flash_message(request),
+        'enable_profile_rewrite': settings.enable_profile_rewrite,
     }
     base_context.update(context)
     return templates.TemplateResponse(template_name, base_context)
@@ -156,7 +201,7 @@ async def attach_request_id(request: Request, call_next):
 @app.middleware('http')
 async def require_token_header(request: Request, call_next):
     required_token = settings.resume_app_token
-    if request.url.path.startswith('/auth/'):
+    if request.url.path.startswith('/auth/') or request.url.path.startswith(EXTENSION_ROUTE_PREFIX):
         return await call_next(request)
     if required_token and request.method.upper() == 'POST':
         provided_token = request.headers.get(settings.request_token_header)
@@ -189,6 +234,25 @@ def _expects_json_response(request: Request) -> bool:
     return request.url.path.startswith('/api/') or 'application/json' in accept
 
 
+def _extract_bearer_token(request: Request) -> str:
+    header = str(request.headers.get('authorization') or '').strip()
+    if not header.lower().startswith('bearer '):
+        return ''
+    return header.split(' ', 1)[1].strip()
+
+
+def _extension_api_user(request: Request) -> Optional[AuthUser]:
+    if not request.url.path.startswith(EXTENSION_ROUTE_PREFIX):
+        return None
+    if not settings.enable_extension_api:
+        return None
+    token = _extract_bearer_token(request)
+    user_id = auth_store.resolve_user_id_from_extension_api_key(token)
+    if not user_id:
+        return None
+    return auth_store.get_user_by_id(user_id)
+
+
 def _login_redirect(path: str, query: str) -> RedirectResponse:
     next_target = path
     if query:
@@ -198,9 +262,14 @@ def _login_redirect(path: str, query: str) -> RedirectResponse:
 
 @app.middleware('http')
 async def require_auth_session(request: Request, call_next):
+    if request.url.path.startswith(EXTENSION_ROUTE_PREFIX) and not settings.enable_extension_api:
+        return JSONResponse(status_code=404, content={'error': 'Extension API is disabled.'})
+
     session_token = request.cookies.get(settings.session_cookie_name)
     user_id = session_manager.parse(session_token)
     current_user: Optional[AuthUser] = auth_store.get_user_by_id(user_id) if user_id else None
+    if current_user is None:
+        current_user = _extension_api_user(request)
     if current_user and not current_user.is_active:
         current_user = None
 
@@ -232,6 +301,14 @@ def _bootstrap_startup_user() -> None:
         repository.migrate_legacy_data_to_user(user.id)
     except Exception as exc:
         logger.warning('Legacy migration skipped for bootstrap user %s: %s', user.id, exc)
+    try:
+        profile = auth_store.ensure_profile_for_user(
+            user=user,
+            seed_resume=repository.load_base_resume(user_id=user.id),
+        )
+        _sync_profile_progress(user.id, profile=profile)
+    except Exception as exc:
+        logger.warning('Profile bootstrap skipped for user %s: %s', user.id, exc)
     _safe_index_call(f'refresh_indexes:{user.id}', lambda: _refresh_user_indexes(user.id))
 
 
@@ -309,6 +386,235 @@ def _build_setup_checklist() -> Dict[str, Any]:
     ]
     completed_count = sum(1 for item in items if item['done'])
     return {'items': items, 'completed_count': completed_count, 'total': len(items)}
+
+
+def _load_or_create_profile(user: Optional[AuthUser]) -> Optional[UserProfile]:
+    if user is None:
+        return None
+    seed_resume = repository.load_base_resume(user_id=user.id)
+    profile = auth_store.ensure_profile_for_user(user=user, seed_resume=seed_resume)
+    return _sync_profile_progress(user.id, profile=profile)
+
+
+def _sync_profile_progress(user_id: str, *, profile: Optional[UserProfile] = None) -> Optional[UserProfile]:
+    current = profile or auth_store.get_profile(user_id)
+    if current is None:
+        return None
+
+    completed_set = {str(step).strip().lower() for step in current.completed_steps}
+    if current.display_name.strip() and current.email.strip():
+        completed_set.add('basics')
+    if repository.load_base_resume(user_id=user_id):
+        completed_set.add('resume_import')
+    if len(repository.list_vault_items(user_id=user_id)) > 0:
+        completed_set.add('evidence')
+    if len(repository.list_jobs(user_id=user_id)) > 0:
+        completed_set.add('first_job')
+
+    ordered_steps = [row['id'] for row in GUIDED_PROFILE_STEPS if row['id'] in completed_set]
+    current.completed_steps = ordered_steps
+    if not ordered_steps:
+        current.onboarding_state = 'not_started'
+    elif REQUIRED_SETUP_STEP_IDS.issubset(set(ordered_steps)) and 'first_job' in ordered_steps:
+        current.onboarding_state = 'completed'
+    else:
+        current.onboarding_state = 'in_progress'
+
+    auth_store.upsert_profile(current)
+    return auth_store.get_profile(user_id)
+
+
+def _build_profile_steps(profile: Optional[UserProfile]) -> list[Dict[str, Any]]:
+    base_resume_exists = repository.load_base_resume() is not None
+    vault_count = len(repository.list_vault_items())
+    job_count = len(repository.list_jobs())
+    completed_set = set(profile.completed_steps if profile else [])
+    llm_ready = bool(llm_service and llm_service.available)
+
+    details: Dict[str, str] = {
+        'basics': 'Save your name and contact details.',
+        'resume_import': 'Upload and parse your latest resume.',
+        'evidence': f'{vault_count} vault item{"s" if vault_count != 1 else ""} currently available.',
+        'first_job': f'{job_count} job{"s" if job_count != 1 else ""} ingested.',
+    }
+    done_by_data = {
+        'basics': bool(profile and profile.display_name.strip() and profile.email.strip()),
+        'resume_import': base_resume_exists,
+        'evidence': vault_count > 0,
+        'first_job': job_count > 0,
+    }
+
+    steps: list[Dict[str, Any]] = []
+    for raw in GUIDED_PROFILE_STEPS:
+        step_id = raw['id']
+        done = step_id in completed_set or done_by_data.get(step_id, False)
+        step = dict(raw)
+        step['done'] = done
+        step['required'] = step_id in REQUIRED_SETUP_STEP_IDS
+        step['detail'] = details[step_id]
+        if step_id == 'resume_import' and base_resume_exists:
+            step['detail'] = 'Canonical resume is available and synced.'
+        if step_id == 'first_job' and not llm_ready:
+            step['detail'] = 'Set OPENAI_API_KEY before running your first generation.'
+        steps.append(step)
+    return steps
+
+
+def _next_incomplete_step(steps: list[Dict[str, Any]]) -> str:
+    for step in steps:
+        if step.get('required') and not step.get('done'):
+            return str(step.get('id'))
+    for step in steps:
+        if not step.get('done'):
+            return str(step.get('id'))
+    return 'first_job'
+
+
+def _build_guided_dashboard_context(user: Optional[AuthUser]) -> Dict[str, Any]:
+    profile = _load_or_create_profile(user)
+    steps = _build_profile_steps(profile)
+    required_complete = all(bool(step.get('done')) for step in steps if step.get('required'))
+    ready_to_generate = required_complete and bool(llm_service and llm_service.available)
+    recent_jobs = repository.list_jobs()[:5]
+    jd_signal = _latest_jd_signal()
+    return {
+        'profile': profile,
+        'steps': steps,
+        'required_complete': required_complete,
+        'ready_to_generate': ready_to_generate,
+        'next_step_id': _next_incomplete_step(steps),
+        'vault_count': len(repository.list_vault_items()),
+        'job_count': len(repository.list_jobs()),
+        'base_resume_exists': repository.load_base_resume() is not None,
+        'recent_jobs': recent_jobs,
+        'jd_signal': jd_signal,
+    }
+
+
+def _display_skill_term(term: str) -> str:
+    normalized = normalize_token(term)
+    if not normalized:
+        return ''
+    if normalized in TERM_DISPLAY_OVERRIDES:
+        return TERM_DISPLAY_OVERRIDES[normalized]
+    if '_' in normalized:
+        return ' '.join(chunk.capitalize() for chunk in normalized.split('_') if chunk)
+    if normalized in UPPERCASE_DISPLAY_TERMS:
+        return normalized.upper()
+    return normalized.capitalize()
+
+
+def _derive_jd_signal(jd_text: str, *, fallback_title: str = '') -> Dict[str, Any]:
+    cleaned_text = (jd_text or '').strip()
+    if not cleaned_text:
+        return {'role_title': '', 'skills': [], 'years_required': None}
+
+    try:
+        parsed = parse_job_description(cleaned_text)
+    except Exception:
+        return {'role_title': '', 'skills': [], 'years_required': None}
+
+    role_title = ''
+    normalized_title = str(parsed.get('normalized_title') or '').strip()
+    if normalized_title:
+        role_title = ' '.join(chunk.capitalize() for chunk in normalized_title.split('_') if chunk)
+    elif fallback_title.strip():
+        role_title = fallback_title.strip()
+
+    skill_ids: list[str] = []
+    for row in parsed.get('required', {}).get('skills', []):
+        skill = str(row.get('canonical_id') or '').strip()
+        if skill:
+            skill_ids.append(skill)
+    for row in parsed.get('preferred', {}).get('skills', []):
+        skill = str(row.get('canonical_id') or '').strip()
+        if skill:
+            skill_ids.append(skill)
+
+    seen: set[str] = set()
+    display_skills: list[str] = []
+    for skill in skill_ids:
+        token = normalize_token(skill)
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        display = _display_skill_term(skill)
+        if display:
+            display_skills.append(display)
+
+    return {
+        'role_title': role_title,
+        'skills': display_skills[:8],
+        'years_required': parsed.get('years_required'),
+    }
+
+
+def _latest_jd_signal() -> Dict[str, Any]:
+    jobs = repository.list_jobs()
+    if not jobs:
+        return {'role_title': '', 'skills': [], 'years_required': None, 'job_id': ''}
+    latest = jobs[0]
+    jd_text = repository.get_job_text(latest.job_id)
+    signal = _derive_jd_signal(jd_text, fallback_title=latest.title or '')
+    signal['job_id'] = latest.job_id
+    return signal
+
+
+def _update_profile_focus_from_jd(user_id: str, *, jd_text: str, fallback_title: str = '') -> None:
+    profile = auth_store.get_profile(user_id)
+    if profile is None:
+        return
+    signal = _derive_jd_signal(jd_text, fallback_title=fallback_title)
+    role_title = str(signal.get('role_title') or '').strip()
+    skills = [str(skill).strip() for skill in signal.get('skills', []) if str(skill).strip()]
+
+    profile.target_roles = [role_title] if role_title else []
+    if role_title and skills:
+        profile.headline = f'{role_title} profile aligned to {", ".join(skills[:3])}.'
+    elif role_title:
+        profile.headline = f'{role_title} profile aligned to the current job description.'
+    elif skills:
+        profile.headline = f'Profile aligned to {", ".join(skills[:3])}.'
+    else:
+        profile.headline = ''
+
+    auth_store.upsert_profile(profile)
+
+
+def _step_lookup(step_id: str) -> Optional[Dict[str, str]]:
+    normalized = str(step_id or '').strip().lower()
+    for step in GUIDED_PROFILE_STEPS:
+        if step['id'] == normalized:
+            return step
+    return None
+
+
+def _build_profile_step_context(
+    *,
+    profile: Optional[UserProfile],
+    step_id: str,
+    error: Optional[str] = None,
+    warnings: Optional[list[str]] = None,
+    raw_text: str = '',
+    job_url: str = '',
+    jd_text: str = '',
+) -> Dict[str, Any]:
+    step = _step_lookup(step_id)
+    if step is None:
+        raise HTTPException(status_code=404, detail='Profile step not found')
+    steps = _build_profile_steps(profile)
+    return {
+        'profile': profile,
+        'steps': steps,
+        'step': step,
+        'error': error,
+        'warnings': warnings or [],
+        'raw_text': raw_text,
+        'job_url': job_url,
+        'jd_text': jd_text,
+        'next_step_id': _next_incomplete_step(steps),
+        'jd_signal': _latest_jd_signal(),
+    }
 
 
 def _safe_index_call(action: str, func) -> None:
@@ -433,6 +739,16 @@ async def auth_login(
     if repository.has_legacy_data() and auth_store.count_users() == 1:
         _safe_index_call(f'migrate_legacy:{user.id}', lambda: repository.migrate_legacy_data_to_user(user.id))
     _safe_index_call(f'refresh_indexes:{user.id}', lambda: _refresh_user_indexes(user.id))
+    _safe_index_call(
+        f'profile_sync:{user.id}',
+        lambda: _sync_profile_progress(
+            user.id,
+            profile=auth_store.ensure_profile_for_user(
+                user=user,
+                seed_resume=repository.load_base_resume(user_id=user.id),
+            ),
+        ),
+    )
 
     response = RedirectResponse(url=next_path or '/', status_code=303)
     response.set_cookie(key=settings.session_cookie_name, value=session_manager.issue(user.id), **_session_cookie_kwargs())
@@ -503,6 +819,16 @@ async def auth_register(
     if repository.has_legacy_data() and auth_store.count_users() == 1:
         _safe_index_call(f'migrate_legacy:{user.id}', lambda: repository.migrate_legacy_data_to_user(user.id))
     _safe_index_call(f'refresh_indexes:{user.id}', lambda: _refresh_user_indexes(user.id))
+    _safe_index_call(
+        f'profile_sync:{user.id}',
+        lambda: _sync_profile_progress(
+            user.id,
+            profile=auth_store.ensure_profile_for_user(
+                user=user,
+                seed_resume=repository.load_base_resume(user_id=user.id),
+            ),
+        ),
+    )
 
     response = RedirectResponse(url=next_path or '/', status_code=303)
     response.set_cookie(key=settings.session_cookie_name, value=session_manager.issue(user.id), **_session_cookie_kwargs())
@@ -530,6 +856,8 @@ def _generate_page_context(*, jd_text: str = '', error: Optional[str] = None, wa
 
 @app.get('/', response_class=HTMLResponse)
 async def generate_page(request: Request) -> HTMLResponse:
+    if settings.enable_profile_rewrite:
+        return render(request, 'home_guided.html', _build_guided_dashboard_context(_current_user(request)))
     return render(request, 'generate.html', _generate_page_context())
 
 
@@ -663,6 +991,9 @@ async def generate_tailored_resume(
             url=job.url,
             path=str(job_path),
         )
+        _update_profile_focus_from_jd(active_user_id, jd_text=pasted_jd_text, fallback_title=job.title or '')
+        auth_store.mark_onboarding_step(user_id=active_user_id, step='first_job')
+        _sync_profile_progress(active_user_id)
 
     workflow = _run_tailoring_workflow(
         base_resume=base_resume,
@@ -710,6 +1041,296 @@ async def legacy_dashboard_redirect() -> RedirectResponse:
 @app.get('/advanced/dashboard')
 async def advanced_dashboard_redirect() -> RedirectResponse:
     return RedirectResponse(url='/advance', status_code=303)
+
+
+@app.get('/profile', response_class=HTMLResponse)
+async def profile_overview_page(request: Request) -> HTMLResponse:
+    if not settings.enable_profile_rewrite:
+        return RedirectResponse(url='/resume/upload', status_code=303)
+    profile = _load_or_create_profile(_current_user(request))
+    steps = _build_profile_steps(profile)
+    required_complete = all(bool(step.get('done')) for step in steps if step.get('required'))
+    return render(
+        request,
+        'profile_overview.html',
+        {
+            'profile': profile,
+            'steps': steps,
+            'required_complete': required_complete,
+            'next_step_id': _next_incomplete_step(steps),
+            'base_resume_exists': repository.load_base_resume() is not None,
+            'vault_count': len(repository.list_vault_items()),
+            'job_count': len(repository.list_jobs()),
+            'llm_available': bool(llm_service and llm_service.available),
+            'jd_signal': _latest_jd_signal(),
+        },
+    )
+
+
+@app.get('/profile/step/{step_id}', response_class=HTMLResponse)
+async def profile_step_page(request: Request, step_id: str) -> HTMLResponse:
+    if not settings.enable_profile_rewrite:
+        return RedirectResponse(url='/resume/upload', status_code=303)
+    profile = _load_or_create_profile(_current_user(request))
+    return render(
+        request,
+        'profile_step.html',
+        _build_profile_step_context(profile=profile, step_id=step_id),
+    )
+
+
+@app.post('/profile/step/{step_id}', response_class=HTMLResponse)
+async def profile_step_submit(request: Request, step_id: str) -> HTMLResponse:
+    if not settings.enable_profile_rewrite:
+        return RedirectResponse(url='/resume/upload', status_code=303)
+    step = _step_lookup(step_id)
+    if step is None:
+        raise HTTPException(status_code=404, detail='Profile step not found')
+
+    user = _current_user(request)
+    profile = _load_or_create_profile(user)
+    if user is None or profile is None:
+        raise HTTPException(status_code=401, detail='Authentication required.')
+
+    form = await request.form()
+
+    if step['id'] == 'basics':
+        display_name = _to_text(form.get('display_name'))
+        email = _to_text(form.get('email'))
+        if not display_name or not email:
+            return render(
+                request,
+                'profile_step.html',
+                _build_profile_step_context(
+                    profile=profile,
+                    step_id=step_id,
+                    error='Name and email are required.',
+                ),
+            )
+        profile.display_name = display_name
+        profile.email = email
+        profile.phone = _to_text(form.get('phone'))
+        profile.location = _to_text(form.get('location'))
+        profile.years_experience = _to_text(form.get('years_experience'))
+        profile.links = _split_multivalue(form.get('links_text'))
+        # Role focus and headline are derived from JD, never user-entered.
+        profile.headline = ''
+        profile.target_roles = []
+        profile = _sync_profile_progress(user.id, profile=profile) or profile
+        auth_store.mark_onboarding_step(user_id=user.id, step='basics')
+        return RedirectResponse(url='/profile?flash=profile_saved', status_code=303)
+
+    if step['id'] == 'resume_import':
+        upload = form.get('file')
+        filename = str(getattr(upload, 'filename', '') or '').strip()
+        if not filename:
+            return render(
+                request,
+                'profile_step.html',
+                _build_profile_step_context(
+                    profile=profile,
+                    step_id=step_id,
+                    error='Upload a resume file before continuing.',
+                ),
+            )
+        suffix = Path(filename).suffix.lower()
+        if suffix not in {'.pdf', '.docx', '.txt'}:
+            return render(
+                request,
+                'profile_step.html',
+                _build_profile_step_context(
+                    profile=profile,
+                    step_id=step_id,
+                    error='Supported resume file types: PDF, DOCX, TXT.',
+                ),
+            )
+
+        upload_path = settings.data_dir / 'uploads' / f'{uuid.uuid4().hex}{suffix}'
+        warnings: list[str] = []
+        content = await upload.read()
+        if len(content) > _max_upload_bytes():
+            return render(
+                request,
+                'profile_step.html',
+                _build_profile_step_context(
+                    profile=profile,
+                    step_id=step_id,
+                    error=_upload_limit_message(),
+                ),
+            )
+        upload_path.write_bytes(content)
+
+        try:
+            upload_result = public_upload_resume(upload_path, enable_ocr=settings.enable_ocr, llm=llm_service)
+            canonical_payload = upload_result.get('canonical') or upload_result.get('parse_mirror', {}).get('canonical')
+            canonical = CanonicalResume.model_validate(canonical_payload)
+            warnings = [str(w).strip() for w in upload_result.get('extraction_warnings', []) if str(w).strip()]
+            repository.save_base_resume(canonical)
+            sync_base_resume_to_vault(repository, canonical)
+            auth_store.upsert_base_resume(user_id=user.id, path=str(repository.base_resume_path_for(user.id)))
+            _refresh_vault_index(user.id)
+            profile.display_name = canonical.identity.name or profile.display_name
+            profile.email = canonical.identity.email or profile.email
+            profile.phone = canonical.identity.phone or profile.phone
+            profile.location = canonical.identity.location or profile.location
+            profile.links = list(canonical.identity.links or profile.links)
+            auth_store.upsert_profile(profile)
+            auth_store.mark_onboarding_step(user_id=user.id, step='resume_import')
+            _sync_profile_progress(user.id)
+        except Exception as exc:
+            return render(
+                request,
+                'profile_step.html',
+                _build_profile_step_context(
+                    profile=profile,
+                    step_id=step_id,
+                    error=_with_request_id(request, f'Resume import failed: {exc}'),
+                ),
+            )
+        finally:
+            try:
+                upload_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        if warnings:
+            return render(
+                request,
+                'profile_step.html',
+                _build_profile_step_context(
+                    profile=auth_store.get_profile(user.id),
+                    step_id=step_id,
+                    warnings=warnings,
+                ),
+            )
+        return RedirectResponse(url='/profile?flash=profile_resume_imported', status_code=303)
+
+    if step['id'] == 'evidence':
+        title = _to_text(form.get('title'))
+        item_type = _to_text(form.get('item_type') or 'project')
+        bullet_text = _to_text(form.get('bullet_text'))
+        if not title:
+            return render(
+                request,
+                'profile_step.html',
+                _build_profile_step_context(
+                    profile=profile,
+                    step_id=step_id,
+                    error='Evidence title is required.',
+                ),
+            )
+        payload: Dict[str, Any] = {
+            'type': item_type,
+            'title': title,
+            'tags': _split_multivalue(form.get('tags_text')),
+            'tech': _split_multivalue(form.get('tech_text')),
+            'bullets': [{'text': bullet_text}] if bullet_text else [],
+            'links': [],
+            'source_artifacts': [],
+        }
+        try:
+            item = VaultItem.model_validate(payload)
+            item_id = uuid.uuid4().hex
+            repository.save_vault_item(item_id, item)
+            vault_dir = repository.vault_dir_for(user.id)
+            item_path = ensure_within(vault_dir, vault_dir / f'{item_id}.yaml')
+            auth_store.upsert_vault_item(
+                user_id=user.id,
+                item_id=item_id,
+                title=item.title,
+                item_type=item.type.value,
+                path=str(item_path),
+            )
+            auth_store.mark_onboarding_step(user_id=user.id, step='evidence')
+            _sync_profile_progress(user.id)
+        except ValidationError as exc:
+            return render(
+                request,
+                'profile_step.html',
+                _build_profile_step_context(
+                    profile=profile,
+                    step_id=step_id,
+                    error='Evidence validation failed: ' + '; '.join(_format_validation_errors(exc)),
+                ),
+            )
+        except Exception as exc:
+            return render(
+                request,
+                'profile_step.html',
+                _build_profile_step_context(
+                    profile=profile,
+                    step_id=step_id,
+                    error=_with_request_id(request, f'Failed to save evidence: {exc}'),
+                ),
+            )
+        return RedirectResponse(url='/profile?flash=vault_saved', status_code=303)
+
+    if step['id'] == 'first_job':
+        url = _to_text(form.get('url'))
+        jd_text = _to_text(form.get('jd_text'))
+        if not url and not jd_text:
+            return render(
+                request,
+                'profile_step.html',
+                _build_profile_step_context(
+                    profile=profile,
+                    step_id=step_id,
+                    error='Provide a URL or paste job description text.',
+                    job_url=url,
+                    jd_text=jd_text,
+                ),
+            )
+        title: Optional[str] = None
+        company: Optional[str] = None
+        if not jd_text and url:
+            try:
+                scrape = await scrape_job_posting(url)
+                title = scrape.title
+                company = scrape.company
+                jd_text = scrape.jd_text
+            except ScrapeError as exc:
+                return render(
+                    request,
+                    'profile_step.html',
+                    _build_profile_step_context(
+                        profile=profile,
+                        step_id=step_id,
+                        error=f'Scraping failed: {exc}. Paste JD text as fallback.',
+                        job_url=url,
+                        jd_text='',
+                    ),
+                )
+        if not jd_text:
+            return render(
+                request,
+                'profile_step.html',
+                _build_profile_step_context(
+                    profile=profile,
+                    step_id=step_id,
+                    error='Job description text is empty.',
+                    job_url=url,
+                    jd_text='',
+                ),
+            )
+        job_id = uuid.uuid4().hex[:12]
+        job = JobRecord(job_id=job_id, url=url or None, title=title, company=company)
+        repository.save_job(job, jd_text)
+        jobs_dir = repository.jobs_dir_for(user.id)
+        job_path = ensure_within(jobs_dir, jobs_dir / job_id / 'job.yaml')
+        auth_store.upsert_job(
+            user_id=user.id,
+            job_id=job.job_id,
+            title=job.title,
+            company=job.company,
+            url=job.url,
+            path=str(job_path),
+        )
+        _update_profile_focus_from_jd(user.id, jd_text=jd_text, fallback_title=job.title or '')
+        auth_store.mark_onboarding_step(user_id=user.id, step='first_job')
+        _sync_profile_progress(user.id)
+        return RedirectResponse(url=f'/jobs/{job_id}?flash=job_ingested', status_code=303)
+
+    raise HTTPException(status_code=400, detail='Unsupported profile step')
 
 
 @app.get('/audit', response_class=HTMLResponse)
@@ -1030,6 +1651,17 @@ async def resume_save(request: Request, canonical_yaml: Optional[str] = Form(def
                 path=str(repository.base_resume_path_for(active_user_id)),
             )
             _refresh_vault_index(active_user_id)
+            existing_user = auth_store.get_user_by_id(active_user_id)
+            if existing_user:
+                profile = auth_store.ensure_profile_for_user(user=existing_user, seed_resume=canonical)
+                profile.display_name = canonical.identity.name or profile.display_name
+                profile.email = canonical.identity.email or profile.email
+                profile.phone = canonical.identity.phone or profile.phone
+                profile.location = canonical.identity.location or profile.location
+                profile.links = list(canonical.identity.links or profile.links)
+                auth_store.upsert_profile(profile)
+                auth_store.mark_onboarding_step(user_id=active_user_id, step='resume_import')
+                _sync_profile_progress(active_user_id)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f'Failed to save/sync resume: {exc}') from exc
 
@@ -1044,6 +1676,10 @@ async def resume_sync_vault():
     try:
         sync_base_resume_to_vault(repository, base_resume)
         _refresh_vault_index(_active_user_id())
+        active_user_id = _active_user_id()
+        if active_user_id:
+            auth_store.mark_onboarding_step(user_id=active_user_id, step='resume_import')
+            _sync_profile_progress(active_user_id)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f'Vault sync failed: {exc}') from exc
     return RedirectResponse(url='/vault?flash=vault_synced', status_code=303)
@@ -1223,6 +1859,8 @@ async def vault_new(request: Request, item_yaml: Optional[str] = Form(default=No
                 item_type=item.type.value,
                 path=str(item_path),
             )
+            auth_store.mark_onboarding_step(user_id=active_user_id, step='evidence')
+            _sync_profile_progress(active_user_id)
         return RedirectResponse(url='/vault?flash=vault_saved', status_code=303)
     except ValidationError as exc:
         return render(
@@ -1279,6 +1917,8 @@ async def vault_edit(request: Request, item_id: str, item_yaml: Optional[str] = 
                 item_type=item.type.value,
                 path=str(item_path),
             )
+            auth_store.mark_onboarding_step(user_id=active_user_id, step='evidence')
+            _sync_profile_progress(active_user_id)
         return RedirectResponse(url='/vault?flash=vault_saved', status_code=303)
     except ValidationError as exc:
         return render(
@@ -1308,6 +1948,7 @@ async def vault_delete(item_id: str):
     active_user_id = _active_user_id()
     if active_user_id:
         auth_store.delete_vault_item(user_id=active_user_id, item_id=item_id)
+        _sync_profile_progress(active_user_id)
     return RedirectResponse(url='/vault?flash=vault_deleted', status_code=303)
 
 
@@ -1382,6 +2023,9 @@ async def jobs_ingest(
             url=job.url,
             path=str(job_path),
         )
+        _update_profile_focus_from_jd(active_user_id, jd_text=jd_text, fallback_title=job.title or '')
+        auth_store.mark_onboarding_step(user_id=active_user_id, step='first_job')
+        _sync_profile_progress(active_user_id)
 
     return RedirectResponse(url=f'/jobs/{job_id}?flash=job_ingested', status_code=303)
 
@@ -1433,6 +2077,9 @@ async def jobs_update_jd(job_id: str, jd_text: str = Form(...)):
             url=job.url,
             path=str(job_path),
         )
+        _update_profile_focus_from_jd(active_user_id, jd_text=jd_text, fallback_title=job.title or '')
+        auth_store.mark_onboarding_step(user_id=active_user_id, step='first_job')
+        _sync_profile_progress(active_user_id)
     return RedirectResponse(url=f'/jobs/{job_id}?flash=jd_saved', status_code=303)
 
 
@@ -1599,6 +2246,65 @@ def _run_tailoring_workflow(
         'compile_error': compile_error,
         'match_score': optimization_match_score,
     }
+
+
+def _require_authenticated_user_id(request: Request) -> str:
+    user_id = str(getattr(request.state, 'current_user_id', '') or '').strip()
+    if not user_id:
+        raise HTTPException(status_code=401, detail='Authentication required.')
+    return user_id
+
+
+async def _execute_extension_tailor_run(
+    *,
+    run_id: str,
+    user_id: str,
+    job_id: str,
+    jd_text: str,
+    job_title_hint: str,
+) -> None:
+    auth_store.update_extension_run(run_id=run_id, status='running', error=None, output_timestamp=None)
+    token = set_current_user_id(user_id)
+    try:
+        if not llm_service or not llm_service.available:
+            raise RuntimeError('OPENAI_API_KEY is not configured. Tailoring is disabled.')
+
+        base_resume = repository.load_base_resume(user_id=user_id)
+        if not base_resume:
+            raise RuntimeError('Base resume is missing. Upload and save a base resume first.')
+
+        vault_items = repository.list_vault_items(user_id=user_id)
+        if not vault_items:
+            raise RuntimeError('Vault is empty. Add evidence items before tailoring.')
+
+        workflow = await run_in_threadpool(
+            _run_tailoring_workflow,
+            base_resume=base_resume,
+            job_id=job_id,
+            jd_text=jd_text,
+            mode=DEFAULT_TAILOR_MODE,
+            job_title_hint=job_title_hint or None,
+        )
+        auth_store.update_extension_run(
+            run_id=run_id,
+            status='succeeded',
+            error=None,
+            output_timestamp=str(workflow['timestamp']),
+        )
+    except Exception as exc:
+        auth_store.update_extension_run(
+            run_id=run_id,
+            status='failed',
+            error=str(exc),
+            output_timestamp=None,
+        )
+    finally:
+        reset_current_user_id(token)
+        EXTENSION_RUN_TASKS.pop(run_id, None)
+
+
+def _extension_run_download_url(run_id: str) -> str:
+    return f'/api/ext/v1/tailor-runs/{run_id}/resume.pdf'
 
 
 def _tailor_result_context(
@@ -1854,6 +2560,126 @@ async def download_output_artifact(job_id: str, timestamp: str, artifact: str):
     if not target.exists():
         raise HTTPException(status_code=404, detail='Artifact not found')
     return FileResponse(path=target, media_type=allowed[artifact], filename=artifact)
+
+
+@app.get('/api/ext/v1/key/status')
+async def extension_key_status(request: Request):
+    user_id = _require_authenticated_user_id(request)
+    status = auth_store.get_extension_api_key_status(user_id=user_id)
+    if status is None:
+        return JSONResponse(content={'has_key': False, 'key_id': None, 'created_at': None, 'rotated_at': None})
+    return JSONResponse(
+        content={
+            'has_key': bool(status.is_active),
+            'key_id': status.key_id,
+            'created_at': status.created_at,
+            'rotated_at': status.rotated_at,
+        }
+    )
+
+
+@app.post('/api/ext/v1/key/regenerate')
+async def extension_key_regenerate(request: Request):
+    user_id = _require_authenticated_user_id(request)
+    api_key = auth_store.regenerate_extension_api_key(user_id=user_id)
+    status = auth_store.get_extension_api_key_status(user_id=user_id)
+    return JSONResponse(
+        content={
+            'api_key': api_key,
+            'key_id': status.key_id if status else None,
+            'rotated_at': status.rotated_at if status else None,
+        }
+    )
+
+
+@app.post('/api/ext/v1/tailor-runs')
+async def extension_create_tailor_run(request: Request):
+    user_id = _require_authenticated_user_id(request)
+    payload = await request.json()
+    jd_text = _clean_payload_text(payload.get('jd_text'))
+    source_url = _clean_payload_text(payload.get('source_url'))
+    job_title = _clean_payload_text(payload.get('job_title'))
+    company = _clean_payload_text(payload.get('company'))
+
+    if not jd_text:
+        raise HTTPException(status_code=400, detail='jd_text is required.')
+
+    job_id = uuid.uuid4().hex[:12]
+    title = job_title or 'Extension Captured Job'
+    job = JobRecord(job_id=job_id, title=title, company=company or None, url=source_url or None)
+    repository.save_job(job, jd_text, user_id=user_id)
+
+    jobs_dir = repository.jobs_dir_for(user_id)
+    job_path = ensure_within(jobs_dir, jobs_dir / job_id / 'job.yaml')
+    auth_store.upsert_job(
+        user_id=user_id,
+        job_id=job.job_id,
+        title=job.title,
+        company=job.company,
+        url=job.url,
+        path=str(job_path),
+    )
+    _update_profile_focus_from_jd(user_id, jd_text=jd_text, fallback_title=job.title or '')
+    auth_store.mark_onboarding_step(user_id=user_id, step='first_job')
+    _sync_profile_progress(user_id)
+
+    run = auth_store.create_extension_run(user_id=user_id, job_id=job_id)
+    task = asyncio.create_task(
+        _execute_extension_tailor_run(
+            run_id=run.run_id,
+            user_id=user_id,
+            job_id=job_id,
+            jd_text=jd_text,
+            job_title_hint=job.title or '',
+        )
+    )
+    EXTENSION_RUN_TASKS[run.run_id] = task
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            'run_id': run.run_id,
+            'job_id': job_id,
+            'status': run.status,
+        },
+    )
+
+
+@app.get('/api/ext/v1/tailor-runs/{run_id}')
+async def extension_tailor_run_status(request: Request, run_id: str):
+    user_id = _require_authenticated_user_id(request)
+    run = auth_store.get_extension_run(run_id=run_id, user_id=user_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail='Run not found.')
+
+    payload: Dict[str, Any] = {
+        'run_id': run.run_id,
+        'job_id': run.job_id,
+        'status': run.status,
+        'error': run.error,
+        'created_at': run.created_at,
+        'updated_at': run.updated_at,
+    }
+    if run.status == 'succeeded' and run.output_timestamp:
+        payload['timestamp'] = run.output_timestamp
+        payload['pdf_download_url'] = _extension_run_download_url(run.run_id)
+    return JSONResponse(content=payload)
+
+
+@app.get('/api/ext/v1/tailor-runs/{run_id}/resume.pdf')
+async def extension_tailor_run_pdf(request: Request, run_id: str):
+    user_id = _require_authenticated_user_id(request)
+    run = auth_store.get_extension_run(run_id=run_id, user_id=user_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail='Run not found.')
+    if run.status != 'succeeded' or not run.output_timestamp:
+        raise HTTPException(status_code=409, detail='Run is not complete yet.')
+
+    outputs_root = repository.outputs_dir_for(user_id)
+    pdf_path = ensure_within(outputs_root, outputs_root / run.job_id / run.output_timestamp / 'resume.pdf')
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail='Output PDF not found.')
+    return FileResponse(path=pdf_path, media_type='application/pdf', filename=f'resume-{run.job_id}.pdf')
 
 
 @app.post('/api/upload_resume')

@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Resume Optimizer Tailor",
+  "version": "0.1.0",
+  "description": "Capture job descriptions from job pages and run Resume Optimizer tailoring without opening the full dashboard.",
+  "permissions": [
+    "activeTab",
+    "downloads",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Resume Optimizer",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/extractor.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

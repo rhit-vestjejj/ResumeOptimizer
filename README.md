@@ -15,10 +15,12 @@ Local-only resume tailoring web app for Linux servers, designed to be accessed o
 - MVP flow uses a single tailoring pass with fixed opinionated defaults; no user tuning knobs in the main UI.
 - Legacy per-job feedback and multi-pass optimization code paths have been removed from active backend flow.
 - Auto-generate a concise summary line that includes the target role title (when detected) plus evidence terms from selected resume content.
-- Render LaTeX via Jinja2 and compile using `latexmk` to `resume.pdf`.
+- Render LaTeX via Jinja2 and compile to `resume.pdf`:
+  - locally with `latexmk` (default)
+  - remotely via `RENDERER_URL` (for Vercel/serverless)
 - Enforce one-page output with compile-time control loop: trim when over one page, then add projects back while it still fits.
 - Project selection enforces at least 2 bullets per selected project; if space is tight, fewer projects are kept.
-- Save outputs locally in `data/outputs/<job_id>/<timestamp>/` with `resume.tex`, `resume.pdf`, `report.json`.
+- Save outputs locally in `data/outputs/<job_id>/<timestamp>/` with `resume.tex`, `resume.pdf`, `report.json` (`/tmp/data/...` when `VERCEL=1`).
 - Exposes deterministic ATS audit/extension APIs:
   - mirror parsing + parse quality scoring
   - ATS linter with structured issue codes
@@ -132,7 +134,7 @@ APP_SECRET_KEY=change_me_to_a_long_random_value
 # APP_ENV=prod
 # RESUME_APP_TOKEN=change_me
 # SESSION_COOKIE_SECURE=1
-# ALLOW_SELF_SIGNUP=0
+# ALLOW_SELF_SIGNUP=1
 # MAX_UPLOAD_MB=10
 # BOOTSTRAP_USER_EMAIL=admin@example.com
 # BOOTSTRAP_USER_PASSWORD=change_me_please
@@ -198,9 +200,12 @@ python3 -m playwright install-deps chromium
 | `SESSION_COOKIE_NAME` | No | `resume_session` | Auth session cookie name |
 | `SESSION_TTL_SECONDS` | No | `604800` | Session expiration in seconds |
 | `SESSION_COOKIE_SECURE` | No | `0` | Set cookie `Secure` flag (enable in HTTPS prod) |
-| `ALLOW_SELF_SIGNUP` | No | `0` | Allow users to self-register (`1`) or enforce invite-only (`0`) |
+| `ALLOW_SELF_SIGNUP` | No | `1` | Self-signup toggle (registration is enabled in current UI/API flow) |
 | `MAX_UPLOAD_MB` | No | `10` | Maximum upload size in MB for resume/vault/audit upload routes |
 | `SQLITE_PATH` | No | `data/app.db` | SQLite path for user/auth data |
+| `ENABLE_EXTENSION_API` | No | `1` | Enables Chrome extension API routes under `/api/ext/v1/*` |
+| `EXTENSION_ALLOWED_ORIGINS` | No | empty | Optional comma-separated origins allowed for extension CORS (in addition to `chrome-extension://*`) |
+| `RENDERER_URL` | No | unset | Remote renderer base URL (`http://<vm-ip>:8080`) for LaTeX PDF compile; if unset, local `latexmk` is used |
 | `BOOTSTRAP_USER_EMAIL` | No | unset | Optional startup account bootstrap email |
 | `BOOTSTRAP_USER_PASSWORD` | No | unset | Optional startup account bootstrap password |
 
@@ -209,19 +214,33 @@ If `RESUME_APP_TOKEN` is set, POST requests must include:
 
 When `APP_ENV` is set to a non-dev value (for example `prod`), `APP_SECRET_KEY` must be changed from `dev-change-me`.
 
-### Invite-only account provisioning
+## Deploy Renderer To Oracle Always Free
 
-Default mode is invite-only (`ALLOW_SELF_SIGNUP=0`). Create friend accounts with:
+Use this only for LaTeX rendering while keeping the main app on Vercel.
 
-```bash
-.venv/bin/python scripts/create_user.py --email friend@example.com
-```
+1. Create an Oracle Always Free VM, then open inbound TCP `8080`.
+2. Install Docker on the VM.
+3. Clone this repo and enter the renderer directory:
+   ```bash
+   cd services/renderer
+   ```
+4. Build the renderer image:
+   ```bash
+   docker build -t resume-renderer .
+   ```
+5. Run the renderer container:
+   ```bash
+   docker run -d -p 8080:8080 --restart unless-stopped resume-renderer
+   ```
+6. In Vercel project env vars, set:
+   - `RENDERER_URL=http://<vm-ip>:8080` (or HTTPS URL if you front it with TLS/reverse proxy)
 
-Or provide password inline:
+### Frontend/API integration
 
-```bash
-.venv/bin/python scripts/create_user.py --email friend@example.com --password "change_me_please"
-```
+- Keep frontend PDF generation pointed at the existing backend workflow/routes.
+- Backend LaTeX compile now auto-switches:
+  - `RENDERER_URL` set -> proxy compile to remote renderer over HTTP
+  - `RENDERER_URL` unset -> local `latexmk` (local dev / `make run`)
 
 ## Run
 
@@ -242,7 +261,7 @@ Server listens on:
 ## App routes
 
 - `GET/POST /auth/login` sign in
-- `GET/POST /auth/register` create account (only when `ALLOW_SELF_SIGNUP=1`)
+- `GET/POST /auth/register` create account
 - `POST /auth/logout` sign out
 - `GET /` dashboard
 - `GET/POST /resume/upload` upload + parse resume
@@ -280,6 +299,31 @@ Server listens on:
 - `POST /api/render_outputs`
 - `GET /api/export_bundle/{job_id}/{timestamp}`
 - `POST /api/compare_versions`
+
+### Chrome extension API routes
+
+- `GET /api/ext/v1/key/status`
+- `POST /api/ext/v1/key/regenerate`
+- `POST /api/ext/v1/tailor-runs`
+- `GET /api/ext/v1/tailor-runs/{run_id}`
+- `GET /api/ext/v1/tailor-runs/{run_id}/resume.pdf`
+
+## Chrome extension (Load unpacked)
+
+1. Start backend (`make run`) and sign in once.
+2. Generate an extension key using `POST /api/ext/v1/key/regenerate` (or any authenticated client).
+3. Open `chrome://extensions`, enable Developer Mode, click **Load unpacked**, select `extension/chrome`.
+4. Open extension **Options** and set:
+   - Backend URL (for local: `http://localhost:8030`)
+   - Extension API key (`rox_...`)
+5. On any job page, open extension popup:
+   - **Capture Job From Page**
+   - **Run Tailoring**
+   - **Download PDF**
+
+Renderer service routes (`services/renderer`):
+- `POST /render/pdf` compile LaTeX JSON payload to PDF bytes
+- `GET /healthz` liveness
 
 ## Data layout
 
@@ -343,13 +387,21 @@ Includes:
 
 ## Troubleshooting
 
-- Login/signup confusion: if self-signup is disabled (`ALLOW_SELF_SIGNUP=0`), new users must be provisioned via `scripts/create_user.py`.
 - Upload errors: ensure files are under `MAX_UPLOAD_MB` and in supported formats.
 - Tailoring disabled: set `OPENAI_API_KEY` and restart.
+- Vercel PDF compile errors: set `RENDERER_URL` to a reachable renderer service; Vercel cannot run `latexmk`.
+- Vercel disk errors (`Errno 30`): ensure `VERCEL=1` is set in deployment so writable paths use `/tmp/data`.
 - Debug support: include the request ID shown in the app footer when reporting issues.
 
 ## Known limitations (MVP)
 
 - No background worker queue; heavy operations run inline per request.
-- Invite-only provisioning is CLI-based (no admin UI yet).
 - External scraping quality depends on source website structure and anti-bot defenses.
+
+## Concise Deployment Checklist
+
+- Vercel app deployed with env vars: `OPENAI_API_KEY`, `APP_SECRET_KEY`, `RENDERER_URL`.
+- Oracle renderer VM running container on port `8080`.
+- `RENDERER_URL` reachable from Vercel.
+- `GET /readyz` returns all checks `ok`.
+- Tailor run produces `/outputs/{job_id}/{timestamp}/resume.pdf` successfully.

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="animate-fadeup rounded-3xl border border-stone-200 bg-white/90 p-6 shadow-sm md:p-8">
+  <p class="text-xs font-bold uppercase tracking-[0.2em] text-teal-700">Profile</p>
+  <h2 class="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">Your Resume Profile</h2>
+  <p class="mt-2 max-w-3xl text-sm text-slate-700">Manage personal details, import resume data, and keep evidence aligned before tailoring.</p>
+
+  <div class="mt-5 grid gap-3 md:grid-cols-3">
+    <div class="rounded-2xl border border-stone-200 bg-white px-4 py-3">
+      <p class="text-xs font-bold uppercase tracking-wide text-slate-600">Name</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{{ profile.display_name or '-' }}</p>
+    </div>
+    <div class="rounded-2xl border border-stone-200 bg-white px-4 py-3">
+      <p class="text-xs font-bold uppercase tracking-wide text-slate-600">Email</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{{ profile.email or '-' }}</p>
+    </div>
+    <div class="rounded-2xl border px-4 py-3 {% if required_complete %}border-emerald-300 bg-emerald-50{% else %}border-amber-300 bg-amber-50{% endif %}">
+      <p class="text-xs font-bold uppercase tracking-wide text-slate-600">Required Setup</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{% if required_complete %}Complete{% else %}In Progress{% endif %}</p>
+    </div>
+  </div>
+
+  <div class="mt-5 flex flex-wrap gap-2">
+    <a class="inline-flex items-center justify-center rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-teal-800" href="/profile/step/{{ next_step_id }}">Continue Setup</a>
+    <a class="inline-flex items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-stone-100" href="/">Back Home</a>
+  </div>
+
+  <div class="mt-5 rounded-2xl border border-sky-300 bg-sky-50/90 p-4">
+    <p class="text-xs font-bold uppercase tracking-wide text-sky-800">Auto-Derived From Latest JD</p>
+    <p class="mt-1 text-sm text-slate-800">Role focus: <strong>{{ jd_signal.role_title or 'Not detected yet' }}</strong></p>
+    {% if jd_signal.skills %}
+      <div class="mt-2 flex flex-wrap gap-2">
+        {% for skill in jd_signal.skills %}
+        <span class="rounded-full border border-sky-300 bg-white px-2 py-1 text-xs font-semibold text-sky-900">{{ skill }}</span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="mt-2 text-sm text-slate-700">No skills extracted yet. Add a fuller job description to improve skill detection.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="mt-4 animate-fadeup rounded-3xl border border-stone-200 bg-white/90 p-6 shadow-sm md:p-8" style="animation-delay: 100ms;">
+  <h3 class="text-lg font-bold text-slate-900">Guided Steps</h3>
+  <div class="mt-4 grid gap-3 md:grid-cols-2">
+    {% for step in steps %}
+    <article class="rounded-2xl border px-4 py-3 {% if step.done %}border-emerald-300 bg-emerald-50/80{% else %}border-stone-200 bg-white{% endif %}">
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-sm font-semibold text-slate-900">{{ step.label }}</p>
+        <span class="text-xs font-bold uppercase tracking-wide {% if step.done %}text-emerald-700{% else %}text-slate-500{% endif %}">{% if step.done %}Done{% else %}Pending{% endif %}</span>
+      </div>
+      <p class="mt-1 text-sm text-slate-700">{{ step.description }}</p>
+      <p class="mt-1 text-sm text-slate-600">{{ step.detail }}</p>
+      <a class="mt-2 inline-flex text-sm font-semibold text-teal-800 underline" href="{{ step.href }}">Open step</a>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

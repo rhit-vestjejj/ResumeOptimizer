@@ -3,12 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from pathlib import Path
 
 from starlette.requests import Request
 from starlette.responses import Response
 
 from app.main import app
 from app import main as app_main
+from app.config import Settings
+from app.services.auth import AuthStore, SessionManager
+from app.services.repository import DataRepository
 
 
 def test_required_public_api_routes_exist() -> None:
@@ -47,11 +51,25 @@ def test_ops_routes_exist() -> None:
     assert expected.issubset(actual)
 
 
+def test_extension_api_routes_exist() -> None:
+    expected = {
+        '/api/ext/v1/key/status',
+        '/api/ext/v1/key/regenerate',
+        '/api/ext/v1/tailor-runs',
+        '/api/ext/v1/tailor-runs/{run_id}',
+        '/api/ext/v1/tailor-runs/{run_id}/resume.pdf',
+    }
+    actual = {route.path for route in app.routes}
+    assert expected.issubset(actual)
+
+
 def test_mvp_surface_routes_exist() -> None:
     expected = {
         '/',
         '/generate',
         '/advance',
+        '/profile',
+        '/profile/step/{step_id}',
         '/auth/login',
         '/auth/register',
         '/auth/logout',
@@ -95,6 +113,27 @@ def _get_request(path: str) -> Request:
 
 
 def test_generate_page_renders_with_setup_checklist() -> None:
+    response = asyncio.run(app_main.generate_page(_get_request('/')))
+    assert response.status_code == 200
+
+
+def test_generate_page_renders_guided_home_when_flag_enabled(tmp_path, monkeypatch) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        sqlite_path=tmp_path / 'app.db',
+        app_env='test',
+        app_secret_key='test-secret',
+        enable_profile_rewrite=True,
+    )
+    settings.ensure_directories()
+    monkeypatch.setattr(app_main, 'settings', settings)
+    monkeypatch.setattr(app_main, 'repository', DataRepository(settings))
+    monkeypatch.setattr(app_main, 'auth_store', AuthStore(settings.resolved_sqlite_path))
+    monkeypatch.setattr(
+        app_main,
+        'session_manager',
+        SessionManager(settings.app_secret_key, ttl_seconds=settings.session_ttl_seconds),
+    )
     response = asyncio.run(app_main.generate_page(_get_request('/')))
     assert response.status_code == 200
 
@@ -152,3 +191,49 @@ def test_setup_checklist_completion_count(monkeypatch) -> None:
     checklist = app_main._build_setup_checklist()
     assert checklist['completed_count'] == 3
     assert checklist['total'] == 4
+
+
+def test_derive_jd_signal_extracts_role_and_skills() -> None:
+    jd = '''
+Machine Learning Engineer
+Required:
+- 3+ years of Python and SQL
+- Experience with AWS and Docker
+Preferred:
+- FastAPI
+'''
+    signal = app_main._derive_jd_signal(jd)
+    assert signal['role_title']
+    assert 'Python' in signal['skills']
+    assert 'SQL' in signal['skills']
+
+
+def test_update_profile_focus_from_jd_updates_profile(tmp_path: Path, monkeypatch) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        sqlite_path=tmp_path / 'app.db',
+        app_env='test',
+        app_secret_key='test-secret',
+    )
+    settings.ensure_directories()
+    monkeypatch.setattr(app_main, 'settings', settings)
+    monkeypatch.setattr(app_main, 'repository', DataRepository(settings))
+    monkeypatch.setattr(app_main, 'auth_store', AuthStore(settings.resolved_sqlite_path))
+    monkeypatch.setattr(
+        app_main,
+        'session_manager',
+        SessionManager(settings.app_secret_key, ttl_seconds=settings.session_ttl_seconds),
+    )
+
+    user = app_main.auth_store.create_user(email='focus@example.com', password='supersecure123')
+    app_main.auth_store.ensure_profile_for_user(user=user, seed_resume=None)
+    app_main._update_profile_focus_from_jd(
+        user.id,
+        jd_text='Backend Engineer role requiring Python, SQL, and Docker.',
+        fallback_title='Backend Engineer',
+    )
+
+    profile = app_main.auth_store.get_profile(user.id)
+    assert profile is not None
+    assert profile.target_roles
+    assert profile.headline

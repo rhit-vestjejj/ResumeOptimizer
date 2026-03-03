@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="animate-fadeup rounded-3xl border border-stone-200 bg-white/90 p-6 shadow-sm md:p-8">
+  <p class="text-xs font-bold uppercase tracking-[0.2em] text-teal-700">Guided Home</p>
+  <h2 class="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">Welcome{% if profile and profile.display_name %}, {{ profile.display_name }}{% endif %}</h2>
+  <p class="mt-2 max-w-3xl text-sm text-slate-700">Complete setup once, then reuse your profile and evidence vault for each tailored resume.</p>
+
+  <div class="mt-5 grid gap-3 md:grid-cols-3">
+    <div class="rounded-2xl border px-4 py-3 {% if base_resume_exists %}border-emerald-300 bg-emerald-50{% else %}border-amber-300 bg-amber-50{% endif %}">
+      <p class="text-xs font-bold uppercase tracking-wide text-slate-600">Base Resume</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{% if base_resume_exists %}Ready{% else %}Missing{% endif %}</p>
+    </div>
+    <div class="rounded-2xl border border-sky-300 bg-sky-50 px-4 py-3">
+      <p class="text-xs font-bold uppercase tracking-wide text-slate-600">Vault Items</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{{ vault_count }}</p>
+    </div>
+    <div class="rounded-2xl border border-indigo-300 bg-indigo-50 px-4 py-3">
+      <p class="text-xs font-bold uppercase tracking-wide text-slate-600">Jobs</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{{ job_count }}</p>
+    </div>
+  </div>
+
+  <div class="mt-5 flex flex-wrap gap-2">
+    <a class="inline-flex items-center justify-center rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-teal-800" href="/profile/step/{{ next_step_id }}">Continue Setup</a>
+    <a class="inline-flex items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-stone-100" href="/profile">Open Profile</a>
+    <a class="inline-flex items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-stone-100" href="/jobs/new">Ingest Job</a>
+  </div>
+
+  {% if not ready_to_generate %}
+  <p class="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">Finish required setup steps before generating your first resume.</p>
+  {% endif %}
+  {% if not llm_available %}
+  <p class="mt-3 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-900">Tailoring is disabled until <code class="rounded bg-rose-100 px-1 py-0.5">OPENAI_API_KEY</code> is configured.</p>
+  {% endif %}
+
+  <div class="mt-4 rounded-2xl border border-sky-300 bg-sky-50/90 p-4">
+    <p class="text-xs font-bold uppercase tracking-wide text-sky-800">Auto-Derived Focus (Latest JD)</p>
+    <p class="mt-1 text-sm text-slate-800">Role: <strong>{{ jd_signal.role_title or 'Not detected yet' }}</strong></p>
+    {% if jd_signal.skills %}
+      <div class="mt-2 flex flex-wrap gap-2">
+        {% for skill in jd_signal.skills %}
+        <span class="rounded-full border border-sky-300 bg-white px-2 py-1 text-xs font-semibold text-sky-900">{{ skill }}</span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="mt-2 text-sm text-slate-700">No skills extracted yet. Ingest a richer JD to improve detection.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="mt-4 animate-fadeup rounded-3xl border border-stone-200 bg-white/90 p-6 shadow-sm md:p-8" style="animation-delay: 90ms;">
+  <h3 class="text-lg font-bold text-slate-900">Setup Progress</h3>
+  <div class="mt-4 grid gap-3 md:grid-cols-2">
+    {% for step in steps %}
+    <article class="rounded-2xl border px-4 py-3 {% if step.done %}border-emerald-300 bg-emerald-50/80{% else %}border-stone-200 bg-white{% endif %}">
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-sm font-semibold text-slate-900">{{ step.label }}</p>
+        <span class="text-xs font-bold uppercase tracking-wide {% if step.done %}text-emerald-700{% else %}text-slate-500{% endif %}">{% if step.done %}Done{% else %}Pending{% endif %}</span>
+      </div>
+      <p class="mt-1 text-sm text-slate-700">{{ step.detail }}</p>
+      <a class="mt-2 inline-flex text-sm font-semibold text-teal-800 underline" href="{{ step.href }}">Open step</a>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="mt-4 animate-fadeup rounded-3xl border border-stone-200 bg-white/90 p-6 shadow-sm md:p-8" style="animation-delay: 140ms;">
+  <h3 class="text-lg font-bold text-slate-900">Recent Jobs</h3>
+  {% if recent_jobs %}
+  <div class="mt-3 overflow-hidden rounded-2xl border border-stone-200 bg-white">
+    <table class="min-w-full text-sm">
+      <thead class="bg-stone-100/80 text-left text-xs font-bold uppercase tracking-wide text-slate-600">
+        <tr>
+          <th class="px-4 py-3">Job ID</th>
+          <th class="px-4 py-3">Title</th>
+          <th class="px-4 py-3">Company</th>
+          <th class="px-4 py-3">Action</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for job in recent_jobs %}
+        <tr>
+          <td class="px-4 py-3"><code class="rounded bg-stone-100 px-1.5 py-0.5 text-xs">{{ job.job_id }}</code></td>
+          <td class="px-4 py-3 text-slate-900">{{ job.title or '-' }}</td>
+          <td class="px-4 py-3 text-slate-700">{{ job.company or '-' }}</td>
+          <td class="px-4 py-3"><a class="font-semibold text-teal-800 underline" href="/jobs/{{ job.job_id }}">Open</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="mt-2 text-sm text-slate-700">No jobs yet. Add one from <a class="font-semibold text-teal-800 underline" href="/jobs/new">Ingest Job</a>.</p>
+  {% endif %}
+</section>
+{% endblock %}

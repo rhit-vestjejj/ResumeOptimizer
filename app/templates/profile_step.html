@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="animate-fadeup rounded-3xl border border-stone-200 bg-white/90 p-6 shadow-sm md:p-8">
+  <p class="text-xs font-bold uppercase tracking-[0.2em] text-teal-700">Profile Setup</p>
+  <h2 class="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">{{ step.label }}</h2>
+  <p class="mt-2 max-w-3xl text-sm text-slate-700">{{ step.description }}</p>
+
+  {% if error %}
+    <p class="mt-4 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-900">{{ error }}</p>
+  {% endif %}
+  {% if warnings %}
+    <ul class="mt-4 list-disc space-y-1 pl-5 text-sm text-amber-900">
+      {% for warning in warnings %}
+      <li>{{ warning }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if step.id == 'basics' %}
+  <form class="mt-5 space-y-4 [&_label]:mb-1 [&_label]:block [&_label]:text-xs [&_label]:font-bold [&_label]:uppercase [&_label]:tracking-wide [&_label]:text-slate-600 [&_input]:block [&_input]:w-full [&_input]:rounded-xl [&_input]:border [&_input]:border-stone-300 [&_input]:bg-white [&_input]:px-3 [&_input]:py-2 [&_input]:text-sm [&_input]:focus:border-teal-500 [&_input]:focus:outline-none [&_input]:focus:ring-2 [&_input]:focus:ring-teal-200 [&_textarea]:block [&_textarea]:w-full [&_textarea]:rounded-xl [&_textarea]:border [&_textarea]:border-stone-300 [&_textarea]:bg-white [&_textarea]:px-3 [&_textarea]:py-2 [&_textarea]:text-sm [&_textarea]:leading-6 [&_textarea]:focus:border-teal-500 [&_textarea]:focus:outline-none [&_textarea]:focus:ring-2 [&_textarea]:focus:ring-teal-200" method="post" action="/profile/step/basics">
+    <div class="grid gap-4 md:grid-cols-2">
+      <div>
+        <label>Name</label>
+        <input type="text" name="display_name" required value="{{ profile.display_name }}" />
+      </div>
+      <div>
+        <label>Email</label>
+        <input type="email" name="email" required value="{{ profile.email }}" />
+      </div>
+      <div>
+        <label>Phone</label>
+        <input type="text" name="phone" value="{{ profile.phone }}" />
+      </div>
+      <div>
+        <label>Location</label>
+        <input type="text" name="location" value="{{ profile.location }}" />
+      </div>
+      <div>
+        <label>Years Experience</label>
+        <input type="text" name="years_experience" value="{{ profile.years_experience }}" placeholder="3+" />
+      </div>
+    </div>
+    <div>
+      <label>Links (comma or newline separated)</label>
+      <textarea name="links_text" rows="3">{{ profile.links | join('\n') }}</textarea>
+    </div>
+    <p class="rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+      Headline and job focus are auto-derived from your latest job description.
+    </p>
+    <button class="inline-flex items-center justify-center rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-teal-800" type="submit">Save Basics</button>
+  </form>
+  {% endif %}
+
+  {% if step.id == 'resume_import' %}
+  <form class="mt-5 space-y-4" method="post" action="/profile/step/resume_import" enctype="multipart/form-data">
+    <div>
+      <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Resume File (PDF, DOCX, TXT)</label>
+      <input class="block w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-teal-100 file:px-3 file:py-1.5 file:font-semibold file:text-teal-900 hover:file:bg-teal-200" type="file" name="file" accept=".pdf,.docx,.txt" required />
+    </div>
+    <button class="inline-flex items-center justify-center rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-teal-800" type="submit">Import Resume</button>
+  </form>
+  <p class="mt-3 text-sm text-slate-700">Need full manual control? Use <a class="font-semibold text-teal-800 underline" href="/resume/upload">Resume Upload Editor</a>.</p>
+  {% endif %}
+
+  {% if step.id == 'evidence' %}
+  <form class="mt-5 space-y-4 [&_label]:mb-1 [&_label]:block [&_label]:text-xs [&_label]:font-bold [&_label]:uppercase [&_label]:tracking-wide [&_label]:text-slate-600 [&_input]:block [&_input]:w-full [&_input]:rounded-xl [&_input]:border [&_input]:border-stone-300 [&_input]:bg-white [&_input]:px-3 [&_input]:py-2 [&_input]:text-sm [&_input]:focus:border-teal-500 [&_input]:focus:outline-none [&_input]:focus:ring-2 [&_input]:focus:ring-teal-200 [&_textarea]:block [&_textarea]:w-full [&_textarea]:rounded-xl [&_textarea]:border [&_textarea]:border-stone-300 [&_textarea]:bg-white [&_textarea]:px-3 [&_textarea]:py-2 [&_textarea]:text-sm [&_textarea]:leading-6 [&_textarea]:focus:border-teal-500 [&_textarea]:focus:outline-none [&_textarea]:focus:ring-2 [&_textarea]:focus:ring-teal-200 [&_select]:block [&_select]:w-full [&_select]:rounded-xl [&_select]:border [&_select]:border-stone-300 [&_select]:bg-white [&_select]:px-3 [&_select]:py-2 [&_select]:text-sm" method="post" action="/profile/step/evidence">
+    <div class="grid gap-4 md:grid-cols-2">
+      <div>
+        <label>Type</label>
+        <select name="item_type">
+          <option value="project">project</option>
+          <option value="job">job</option>
+          <option value="club">club</option>
+          <option value="coursework">coursework</option>
+          <option value="award">award</option>
+          <option value="skillset">skillset</option>
+          <option value="other">other</option>
+        </select>
+      </div>
+      <div>
+        <label>Title</label>
+        <input type="text" name="title" required placeholder="Fraud Detection Platform" />
+      </div>
+    </div>
+    <div>
+      <label>Impact Bullet</label>
+      <textarea name="bullet_text" rows="3" placeholder="Built and shipped... resulting in ..."></textarea>
+    </div>
+    <div class="grid gap-4 md:grid-cols-2">
+      <div>
+        <label>Tags</label>
+        <input type="text" name="tags_text" placeholder="backend, ml, fintech" />
+      </div>
+      <div>
+        <label>Tech</label>
+        <input type="text" name="tech_text" placeholder="Python, FastAPI, Postgres" />
+      </div>
+    </div>
+    <button class="inline-flex items-center justify-center rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-teal-800" type="submit">Save Evidence Item</button>
+  </form>
+  <p class="mt-3 text-sm text-slate-700">Need advanced editing? Use <a class="font-semibold text-teal-800 underline" href="/vault">Vault Manager</a>.</p>
+  {% endif %}
+
+  {% if step.id == 'first_job' %}
+  <form class="mt-5 space-y-4 [&_label]:mb-1 [&_label]:block [&_label]:text-xs [&_label]:font-bold [&_label]:uppercase [&_label]:tracking-wide [&_label]:text-slate-600 [&_input]:block [&_input]:w-full [&_input]:rounded-xl [&_input]:border [&_input]:border-stone-300 [&_input]:bg-white [&_input]:px-3 [&_input]:py-2 [&_input]:text-sm [&_input]:focus:border-teal-500 [&_input]:focus:outline-none [&_input]:focus:ring-2 [&_input]:focus:ring-teal-200 [&_textarea]:block [&_textarea]:w-full [&_textarea]:rounded-xl [&_textarea]:border [&_textarea]:border-stone-300 [&_textarea]:bg-white [&_textarea]:px-3 [&_textarea]:py-2 [&_textarea]:text-sm [&_textarea]:leading-6 [&_textarea]:focus:border-teal-500 [&_textarea]:focus:outline-none [&_textarea]:focus:ring-2 [&_textarea]:focus:ring-teal-200" method="post" action="/profile/step/first_job">
+    <div>
+      <label>Job URL</label>
+      <input type="url" name="url" value="{{ job_url }}" placeholder="https://..." />
+    </div>
+    <div>
+      <label>Fallback JD Text</label>
+      <textarea name="jd_text" rows="14">{{ jd_text }}</textarea>
+    </div>
+    <button class="inline-flex items-center justify-center rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-teal-800" type="submit">Save Job</button>
+  </form>
+  {% if jd_signal and (jd_signal.role_title or jd_signal.skills) %}
+  <div class="mt-4 rounded-2xl border border-sky-300 bg-sky-50/90 p-4">
+    <p class="text-xs font-bold uppercase tracking-wide text-sky-800">Auto-Derived From Latest JD</p>
+    <p class="mt-1 text-sm text-slate-800">Role: <strong>{{ jd_signal.role_title or 'Not detected yet' }}</strong></p>
+    <p class="mt-2 text-sm font-semibold text-slate-800">Skills</p>
+    {% if jd_signal.skills %}
+      <div class="mt-1 flex flex-wrap gap-2">
+        {% for skill in jd_signal.skills %}
+        <span class="rounded-full border border-sky-300 bg-white px-2 py-1 text-xs font-semibold text-sky-900">{{ skill }}</span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="mt-1 text-sm text-slate-700">No skills extracted yet. Try a fuller JD.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% endif %}
+</section>
+
+<section class="mt-4 animate-fadeup rounded-3xl border border-stone-200 bg-white/90 p-6 shadow-sm md:p-8" style="animation-delay: 90ms;">
+  <h3 class="text-lg font-bold text-slate-900">All Steps</h3>
+  <div class="mt-4 grid gap-3 md:grid-cols-2">
+    {% for row in steps %}
+    <article class="rounded-2xl border px-4 py-3 {% if row.done %}border-emerald-300 bg-emerald-50/80{% else %}border-stone-200 bg-white{% endif %}">
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-sm font-semibold text-slate-900">{{ row.label }}</p>
+        <span class="text-xs font-bold uppercase tracking-wide {% if row.done %}text-emerald-700{% else %}text-slate-500{% endif %}">{% if row.done %}Done{% else %}Pending{% endif %}</span>
+      </div>
+      <p class="mt-1 text-sm text-slate-700">{{ row.detail }}</p>
+      <a class="mt-2 inline-flex text-sm font-semibold text-teal-800 underline" href="{{ row.href }}">Open step</a>
+    </article>
+    {% endfor %}
+  </div>
+  <div class="mt-4 flex flex-wrap gap-2">
+    <a class="inline-flex items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-stone-100" href="/profile">Profile Overview</a>
+    <a class="inline-flex items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-stone-100" href="/">Home</a>
+  </div>
+</section>
+{% endblock %}

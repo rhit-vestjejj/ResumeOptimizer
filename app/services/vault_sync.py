@@ -9,6 +9,7 @@ from app.services.repository import DataRepository
 from app.utils import slugify
 
 BASE_MARKER_PREFIX = 'base_resume:'
+MAX_BASE_PROJECT_ITEMS = 4
 
 
 @dataclass
@@ -72,7 +73,8 @@ def _generate_base_items(resume: CanonicalResume) -> Dict[str, VaultItem]:
             source_artifacts=[f'{BASE_MARKER_PREFIX}experience:{idx}'],
         )
 
-    for idx, project in enumerate(resume.projects):
+    selected_projects = _select_projects_for_vault(resume.projects, limit=MAX_BASE_PROJECT_ITEMS)
+    for idx, project in enumerate(selected_projects):
         item_id = _stable_item_id('proj', idx, project.name)
         bullets = [bullet for bullet in project.bullets if bullet.strip()]
         section = _project_section(project)
@@ -148,3 +150,52 @@ def _project_section(project: ProjectEntry) -> str:
     if 'minor project' in project.name.lower():
         return 'minor_projects'
     return 'projects'
+
+
+def _select_projects_for_vault(projects: Sequence[ProjectEntry], *, limit: int) -> List[ProjectEntry]:
+    if limit <= 0:
+        return []
+    ranked: List[Tuple[float, int, ProjectEntry]] = []
+    for index, project in enumerate(projects):
+        score = _project_quality_score(project, index=index)
+        ranked.append((score, index, project))
+    ranked.sort(key=lambda row: (-row[0], row[1]))
+    return [row[2] for row in ranked[:limit]]
+
+
+def _project_quality_score(project: ProjectEntry, *, index: int) -> float:
+    name = (project.name or '').strip()
+    if not name:
+        return -1_000.0 + index
+
+    score = 0.0
+    lowered = name.lower()
+    words = re.findall(r'\w+', name)
+    has_year_hint = bool(re.search(r'\b(?:19|20)\d{2}\b', name))
+    has_title_separator = any(token in name for token in (' - ', ' – ', ' — '))
+    bullet_count = len([bullet for bullet in project.bullets if bullet.strip()])
+
+    if has_year_hint:
+        score += 90.0
+    if has_title_separator:
+        score += 20.0
+    if bullet_count >= 2:
+        score += 20.0
+    elif bullet_count == 1:
+        score += 10.0
+    if project.tech:
+        score += 12.0
+    if lowered.startswith('tech:'):
+        score -= 120.0
+    if lowered.endswith('.'):
+        score -= 20.0
+    if len(words) < 3:
+        score -= 35.0
+    if name[0].islower():
+        score -= 30.0
+    if len(name) < 18:
+        score -= 15.0
+
+    # Stable tie-breaker keeps earlier canonical order.
+    score -= index * 0.001
+    return score

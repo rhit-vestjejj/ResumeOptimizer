@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Resume Optimizer Extension Options</title>
+    <style>
+      :root {
+        --bg: #f7f8fc;
+        --panel: #ffffff;
+        --ink: #111827;
+        --muted: #6b7280;
+        --accent: #006d77;
+        --accent-dark: #00545c;
+        --ok: #0f9d58;
+        --err: #c0392b;
+      }
+      body {
+        margin: 0;
+        padding: 22px;
+        background: linear-gradient(130deg, #d3eef1 0%, var(--bg) 40%);
+        font: 14px/1.45 "Segoe UI", "Avenir Next", sans-serif;
+        color: var(--ink);
+      }
+      .panel {
+        max-width: 640px;
+        background: var(--panel);
+        border: 1px solid #dae1ea;
+        border-radius: 14px;
+        box-shadow: 0 8px 20px rgba(17, 24, 39, 0.08);
+        padding: 18px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 20px;
+      }
+      .sub {
+        margin-top: 4px;
+        color: var(--muted);
+      }
+      .grid {
+        margin-top: 14px;
+        display: grid;
+        gap: 12px;
+      }
+      label {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #cad4e6;
+        border-radius: 8px;
+        padding: 9px;
+        font: inherit;
+        background: #fbfcff;
+      }
+      .actions {
+        margin-top: 14px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      button {
+        border: 0;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #fff;
+        padding: 9px 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:hover {
+        background: var(--accent-dark);
+      }
+      button.secondary {
+        background: #ebf0fa;
+        color: var(--ink);
+      }
+      .status {
+        margin-top: 12px;
+        font-weight: 600;
+      }
+      .status.ok {
+        color: var(--ok);
+      }
+      .status.err {
+        color: var(--err);
+      }
+      .hint {
+        margin-top: 10px;
+        color: var(--muted);
+      }
+      code {
+        background: #eef2fa;
+        border-radius: 6px;
+        padding: 1px 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="panel">
+      <h1>Extension Settings</h1>
+      <div class="sub">Connect this extension to your Resume Optimizer backend.</div>
+
+      <div class="grid">
+        <div>
+          <label for="baseUrl">Backend Base URL</label>
+          <input id="baseUrl" type="text" placeholder="http://localhost:8030" />
+        </div>
+        <div>
+          <label for="apiKey">Extension API Key</label>
+          <input id="apiKey" type="password" placeholder="rox_xxxxxx_xxxxx" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="saveBtn" type="button">Save Settings</button>
+        <button id="testBtn" type="button" class="secondary">Test API Key</button>
+        <button id="toggleKeyBtn" type="button" class="secondary">Show Key</button>
+      </div>
+
+      <div id="status" class="status">Idle</div>
+      <div class="hint">
+        Generate a key via backend route <code>POST /api/ext/v1/key/regenerate</code> while logged in, then paste it here.
+      </div>
+    </div>
+
+    <script src="options.js"></script>
+  </body>
+</html>
