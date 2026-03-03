@@ -1970,7 +1970,7 @@ async def jobs_ingest(
     jd_text: Optional[str] = Form(default=None),
 ) -> HTMLResponse:
     url = (url or '').strip()
-    jd_text = (jd_text or '').strip()
+    jd_text = _sanitize_jd_text((jd_text or '').strip())
 
     if not url and not jd_text:
         return render(
@@ -1988,7 +1988,7 @@ async def jobs_ingest(
             scrape = await scrape_job_posting(url)
             title = scrape.title
             company = scrape.company
-            jd_text = scrape.jd_text
+            jd_text = _sanitize_jd_text(scrape.jd_text)
             warnings.extend(scrape.warnings)
         except ScrapeError as exc:
             return render(
@@ -2604,7 +2604,7 @@ async def extension_key_regenerate(request: Request):
 async def extension_create_tailor_run(request: Request):
     user_id = _require_authenticated_user_id(request)
     payload = await request.json()
-    jd_text = _clean_payload_text(payload.get('jd_text'))
+    jd_text = _sanitize_jd_text(_clean_payload_text(payload.get('jd_text')))
     source_url = _clean_payload_text(payload.get('source_url'))
     job_title = _clean_payload_text(payload.get('job_title'))
     company = _clean_payload_text(payload.get('company'))
@@ -2731,7 +2731,7 @@ async def upload_job_description(
     jd_text: Optional[str] = Form(default=None),
 ):
     url = (url or '').strip()
-    jd_text = (jd_text or '').strip()
+    jd_text = _sanitize_jd_text((jd_text or '').strip())
     if not jd_text and not url:
         raise HTTPException(status_code=400, detail='Provide jd_text or url.')
 
@@ -2739,7 +2739,7 @@ async def upload_job_description(
     if not jd_text and url:
         try:
             scraped = await scrape_job_posting(url)
-            jd_text = scraped.jd_text
+            jd_text = _sanitize_jd_text(scraped.jd_text)
             scrape_warnings.extend(scraped.warnings)
         except ScrapeError as exc:
             raise HTTPException(status_code=400, detail=f'Job scraping failed: {exc}') from exc
@@ -3310,6 +3310,65 @@ def _clean_payload_text(value: Any) -> str:
     if value is None:
         return ''
     return str(value).strip()
+
+
+def _sanitize_jd_text(raw_text: str) -> str:
+    raw = str(raw_text or '').replace('\r\n', '\n').replace('\r', '\n')
+    raw = re.sub(
+        r'(?i)(Job description|General Summary:|Role Overview|Minimum Qualifications|Preferred Qualifications|Application Process)',
+        r'\n\1',
+        raw,
+    )
+    start_match = re.search(
+        r'(?i)(Job description|General Summary:|Role Overview|Minimum Qualifications)',
+        raw,
+    )
+    if start_match:
+        raw = raw[start_match.start():]
+
+    lines = raw.split('\n')
+    cleaned_lines: list[str] = []
+    for line in lines:
+        text = re.sub(r'\s+', ' ', line).strip()
+        if not text:
+            continue
+        lowered = text.lower()
+        marker_match = re.search(r'(job description|general summary|role overview|minimum qualifications)', lowered)
+
+        braces = text.count('{') + text.count('}')
+        semicolons = text.count(';')
+        colon_count = text.count(':')
+        comma_count = text.count(',')
+        code_like = bool(
+            re.search(r'\b(function|window\.|document\.|const\s+\w+|let\s+\w+|var\s+\w+|=>)\b', lowered)
+        )
+        json_blob_like = braces >= 4 or (colon_count >= 8 and comma_count >= 8 and '{' in text)
+        high_symbol_density = (braces + semicolons + text.count('<') + text.count('>')) >= max(10, len(text) // 5)
+
+        if marker_match and (code_like or json_blob_like or high_symbol_density):
+            text = text[marker_match.start():].strip()
+            lowered = text.lower()
+            braces = text.count('{') + text.count('}')
+            semicolons = text.count(';')
+            high_symbol_density = (braces + semicolons + text.count('<') + text.count('>')) >= max(10, len(text) // 5)
+
+        if code_like or json_blob_like or high_symbol_density:
+            continue
+        if lowered.startswith(('{\"', '{"', 'window.', 'function ')):
+            continue
+        cleaned_lines.append(text)
+
+    cleaned = '\n'.join(cleaned_lines).strip()
+    if not cleaned:
+        return ''
+
+    marker = re.search(r'(job description|role overview|general summary)', cleaned, flags=re.IGNORECASE)
+    if marker:
+        cleaned = cleaned[marker.start():].strip()
+
+    if len(cleaned) > 18000:
+        cleaned = cleaned[:18000].rsplit('\n', 1)[0].strip() or cleaned[:18000]
+    return cleaned
 
 
 def datetime_now_stamp() -> str:

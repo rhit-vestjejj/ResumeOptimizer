@@ -86,7 +86,8 @@ PROFILE_TERMS: Dict[str, Set[str]] = {
 }
 
 TITLE_MARKER_TERMS = {
-    'engineer', 'scientist', 'developer', 'analyst', 'manager', 'architect', 'researcher', 'intern', 'specialist',
+    'engineer', 'engineering', 'scientist', 'developer', 'analyst', 'manager', 'architect', 'researcher', 'intern',
+    'internship', 'specialist',
 }
 
 ROLE_DESCRIPTOR_TERMS = {
@@ -130,6 +131,7 @@ SUMMARY_BANNED_TERMS = {
     'role', 'roles', 'company', 'strong', 'ability', 'responsibility', 'responsibilities', 'requirement',
     'requirements', 'people', 'communication', 'collaboration', 'automate', 'automation', 'automations',
     'data', 'analytics', 'analysis', 'desk', 'st', 'louis', 'support', 'technical',
+    'ibm', 'watsonx', 'htmlcss',
 }
 
 SUMMARY_ALLOWED_GENERIC_TERMS = {
@@ -148,6 +150,14 @@ MAX_PAGE_UNITS = 41
 MIN_PROJECT_BULLETS = 2
 MUST_HAVE_MIN_TERMS = 1
 MUST_HAVE_TARGET_COVERAGE = 0.65
+PROJECT_LIKE_SOURCE_TYPES = {
+    'project',
+    'coursework',
+    'vault:project',
+    'vault:club',
+    'vault:other',
+    'vault:coursework',
+}
 
 
 @dataclass
@@ -185,10 +195,167 @@ def _normalize_spacing(text: str) -> str:
     return cleaned.strip()
 
 
+def _extract_project_title_dates(title: str) -> Tuple[str, Optional[DateRange]]:
+    cleaned = _normalize_spacing(title)
+    month_pattern = r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}'
+    match = re.match(
+        rf'^(?P<name>.+?)\s+(?P<start>{month_pattern})\s*[–—-]\s*(?P<end>(?:Present|{month_pattern}))$',
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return cleaned, None
+    start = _normalize_spacing(match.group('start'))
+    end = _normalize_spacing(match.group('end'))
+    name = _normalize_spacing(match.group('name'))
+    return name, DateRange(start=start, end=end)
+
+
+def _looks_like_fragmented_project_anchor(project: ProjectEntry) -> bool:
+    if project.dates and ((project.dates.start or '').strip() or (project.dates.end or '').strip()):
+        return True
+    _, parsed_dates = _extract_project_title_dates(project.name)
+    return parsed_dates is not None
+
+
+def _clean_fragmented_project_bullet(*, bullet: str, project_name: str) -> str:
+    cleaned = _normalize_spacing(bullet)
+    project_label = _normalize_spacing(project_name)
+    if project_label:
+        doubled = re.compile(
+            rf'({re.escape(project_label)}\s+to)\s+({re.escape(project_label)}\s+to)',
+            flags=re.IGNORECASE,
+        )
+        cleaned = doubled.sub(r'\1', cleaned)
+        cleaned = re.sub(rf'(?i)\bto\s+{re.escape(project_label)}\s+to\b', 'to', cleaned)
+        occurrences = list(re.finditer(re.escape(project_label), cleaned, flags=re.IGNORECASE))
+        if len(occurrences) > 1:
+            first = occurrences[0]
+            remaining = re.sub(re.escape(project_label), '', cleaned[first.end():], flags=re.IGNORECASE)
+            cleaned = f'{cleaned[:first.end()]} {remaining}'.strip()
+
+    cleaned = re.sub(r'\band\s+\d+\.$', '.', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\bwith\s+\d+\.$', '.', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r',\s*\.$', '.', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip(' ,;')
+    return _ensure_sentence(cleaned)
+
+
+def _merge_project_fragments(parts: Sequence[str], *, project_name: str) -> List[str]:
+    merged: List[str] = []
+    current = ''
+    for part in parts:
+        cleaned = _normalize_spacing(part).lstrip('•').strip()
+        if not cleaned:
+            continue
+        if not current:
+            current = cleaned
+            continue
+        if _is_truncated_bullet_text(current):
+            starts_with_strong_verb = bool(
+                re.match(r'^(Built|Engineered|Implemented|Developed|Integrated|Designed|Trained)\b', cleaned)
+            )
+            if starts_with_strong_verb and len(tokenize(current)) >= 12:
+                current = re.sub(r'\b(and|or|with|to|for|in|of|from|by)\s*$', '', current, flags=re.IGNORECASE).strip()
+                merged.append(_ensure_sentence(current))
+                current = cleaned
+                continue
+            current = _normalize_spacing(f"{current.rstrip(' ,;:')} {cleaned.lstrip(' ,;:')}")
+            continue
+        merged.append(_ensure_sentence(current))
+        current = cleaned
+    if current:
+        merged.append(_ensure_sentence(current))
+
+    filtered: List[str] = []
+    seen: Set[str] = set()
+    for bullet in merged:
+        cleaned_bullet = _clean_fragmented_project_bullet(bullet=bullet, project_name=project_name)
+        if len(tokenize(cleaned_bullet)) < 6:
+            continue
+        key = cleaned_bullet.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        filtered.append(cleaned_bullet)
+
+    deduped: List[str] = []
+    for bullet in filtered:
+        lowered = bullet.lower()
+        if any(lowered == existing.lower() or lowered in existing.lower() or existing.lower() in lowered for existing in deduped):
+            continue
+        deduped.append(bullet)
+    return deduped
+
+
+def _repair_fragmented_base_resume(resume: CanonicalResume) -> CanonicalResume:
+    cloned = CanonicalResume.model_validate(deepcopy(resume.model_dump()))
+    if not cloned.projects:
+        return cloned
+
+    anchors = [idx for idx, project in enumerate(cloned.projects) if _looks_like_fragmented_project_anchor(project)]
+    if len(anchors) < 2:
+        return cloned
+
+    rebuilt_projects: List[ProjectEntry] = []
+    for position, anchor_index in enumerate(anchors):
+        next_anchor_index = anchors[position + 1] if position + 1 < len(anchors) else len(cloned.projects)
+        segment = cloned.projects[anchor_index:next_anchor_index]
+        if not segment:
+            continue
+
+        anchor = segment[0]
+        raw_title = _normalize_spacing(anchor.name)
+        cleaned_title, parsed_dates = _extract_project_title_dates(raw_title)
+        project_dates = parsed_dates or anchor.dates
+        project_section = _project_section_from_entry(anchor)
+
+        tech_terms: List[str] = []
+        bullet_parts: List[str] = []
+
+        for idx, entry in enumerate(segment):
+            entry_name = _normalize_spacing(entry.name)
+            entry_tech = [_normalize_spacing(term) for term in entry.tech if _normalize_spacing(term)]
+            if idx > 0:
+                if entry_name.lower().startswith('tech:'):
+                    tech_inline = [part.strip() for part in entry_name.split(':', 1)[1].split(',')]
+                    tech_terms.extend([term for term in tech_inline if term])
+                elif entry_name and not _looks_like_fragmented_project_anchor(entry):
+                    bullet_parts.append(entry_name)
+            tech_terms.extend(entry_tech)
+            bullet_parts.extend([_normalize_spacing(bullet) for bullet in entry.bullets if _normalize_spacing(bullet)])
+
+        deduped_tech: List[str] = []
+        seen_tech: Set[str] = set()
+        for tech in tech_terms:
+            key = tech.lower()
+            if key in seen_tech:
+                continue
+            seen_tech.add(key)
+            deduped_tech.append(tech)
+
+        merged_bullets = _merge_project_fragments(bullet_parts, project_name=cleaned_title or raw_title)
+        rebuilt_projects.append(
+            ProjectEntry(
+                name=cleaned_title or raw_title,
+                link=anchor.link,
+                dates=project_dates,
+                tech=deduped_tech,
+                bullets=merged_bullets[:3],
+                section=project_section,
+            )
+        )
+
+    viable_rebuild = [project for project in rebuilt_projects if _project_entry_is_viable(project)]
+    if len(viable_rebuild) >= 2:
+        cloned.projects = viable_rebuild
+    return cloned
+
+
 def _clean_title_hint(title: str) -> str:
     cleaned = _normalize_spacing(re.sub(r'\s*\([^)]*\)', '', title))
     lowered = cleaned.lower()
-    for separator in (' at ', ' | ', ' — ', ' – ', ' - ', '/'):
+    for separator in (' at ', ' | ', ' — ', ' – ', ' - '):
         idx = lowered.find(separator)
         if idx <= 0:
             continue
@@ -318,6 +485,7 @@ def _structured_resume_terms(resume: CanonicalResume) -> List[str]:
     terms: List[str] = []
 
     for project in resume.projects:
+        terms.extend(_canonicalize_terms(tokenize(project.name)))
         terms.extend(_canonicalize_terms(tokenize(' '.join(project.tech))))
 
     for skills in resume.skills.categories.values():
@@ -380,6 +548,7 @@ def _collect_summary_terms(resume: CanonicalResume, jd: JDAnalysis, limit: int =
     jd_priority = _canonicalize_terms(
         tokenize(' '.join(jd.required_skills + jd.responsibilities + jd.target_role_keywords + jd.nice_to_haves))
     )
+    jd_term_set = set(jd_priority)
     selected: List[str] = []
     for term in jd_priority:
         if term not in resume_terms:
@@ -397,6 +566,8 @@ def _collect_summary_terms(resume: CanonicalResume, jd: JDAnalysis, limit: int =
             if term in selected:
                 continue
             if not _is_summary_term(term):
+                continue
+            if term not in jd_term_set and term not in SUMMARY_ALLOWED_GENERIC_TERMS:
                 continue
             selected.append(term)
             if len(selected) >= limit:
@@ -1532,12 +1703,9 @@ def _project_intro_bullet(project_title: str, bullets: Sequence[str], tech: Sequ
     non_metric = [bullet for bullet in candidates if not extract_metric_tokens(bullet)]
     seed = non_metric[0] if non_metric else (candidates[0] if candidates else '')
     if seed:
-        lowered = seed.rstrip('.')
-        lowered = re.sub(r'^(Built|Developed|Created|Implemented|Designed|Engineered|Shipped)\s+', '', lowered, flags=re.IGNORECASE)
-        lowered = lowered[:1].lower() + lowered[1:] if lowered else ''
-        intro = _sentence_case(f'Built {project_title} to {lowered}' if lowered else f'Built {project_title}.')
-        if intro:
-            return intro
+        cleaned_seed = _sentence_case(seed)
+        if cleaned_seed and not _is_truncated_bullet_text(cleaned_seed):
+            return cleaned_seed
 
     tech_terms = [term for term in tech[:3] if term]
     if tech_terms:
@@ -1563,6 +1731,8 @@ def _format_project_bullet_pack(
         token = normalize_token(bullet)
         if not token or token in seen or token == intro_norm:
             continue
+        if intro and (bullet.lower() in intro.lower() or intro.lower() in bullet.lower()):
+            continue
         seen.add(token)
         remaining.append(bullet)
 
@@ -1578,6 +1748,8 @@ def _format_project_bullet_pack(
         for bullet in source_candidates:
             token = normalize_token(bullet)
             if not token or token == intro_norm:
+                continue
+            if intro and (bullet.lower() in intro.lower() or intro.lower() in bullet.lower()):
                 continue
             if any(normalize_token(existing) == token for existing in detail):
                 continue
@@ -1926,13 +2098,24 @@ def tailor_resume(
     llm: Optional[LLMService],
     job_title_hint: Optional[str] = None,
 ) -> TailorResult:
+    working_base_resume = _repair_fragmented_base_resume(base_resume)
     jd = analyze_jd_text(jd_text, llm=llm)
-    candidates = build_candidate_pool(base_resume, vault_items, allow_base_fallback=False)
+    candidates = build_candidate_pool(working_base_resume, vault_items, allow_base_fallback=False)
+    if not any(candidate_source.candidate.source_type in PROJECT_LIKE_SOURCE_TYPES for candidate_source in candidates):
+        fallback_candidates = build_candidate_pool(working_base_resume, [], allow_base_fallback=True)
+        existing_ids = {candidate_source.candidate.source_id for candidate_source in candidates}
+        for candidate_source in fallback_candidates:
+            if candidate_source.candidate.source_type not in PROJECT_LIKE_SOURCE_TYPES:
+                continue
+            if candidate_source.candidate.source_id in existing_ids:
+                continue
+            candidates.append(candidate_source)
+            existing_ids.add(candidate_source.candidate.source_id)
     scored, diagnostics_by_source_id = score_candidates_with_diagnostics(
         candidates,
         jd,
         jd_text=jd_text,
-        scoring_resume=base_resume,
+        scoring_resume=working_base_resume,
     )
 
     known_terms = _collect_known_terms(candidates, jd)
@@ -1956,7 +2139,7 @@ def tailor_resume(
                 score_lookup[role_company] = max(score, score_lookup.get(role_company, score))
 
     selected_items: List[SelectedItem] = []
-    tailored = CanonicalResume.model_validate(deepcopy(base_resume.model_dump()))
+    tailored = CanonicalResume.model_validate(deepcopy(working_base_resume.model_dump()))
     tailored.experience = []
     tailored.projects = []
 
@@ -1966,7 +2149,7 @@ def tailor_resume(
 
         if candidate_source.origin['kind'] == 'base_experience':
             index = int(candidate_source.origin['index'])
-            source_entry = base_resume.experience[index]
+            source_entry = working_base_resume.experience[index]
             tailored.experience.append(
                 ExperienceEntry(
                     company=source_entry.company,
@@ -1978,7 +2161,7 @@ def tailor_resume(
             )
         elif candidate_source.origin['kind'] == 'base_project':
             index = int(candidate_source.origin['index'])
-            source_entry = base_resume.projects[index]
+            source_entry = working_base_resume.projects[index]
             tailored.projects.append(
                 ProjectEntry(
                     name=source_entry.name,
@@ -2369,7 +2552,7 @@ def prune_resume_for_one_page(
         removed = pruned.projects.pop(project_index)
         warnings.append(f'Removed extra project to enforce {MAX_PROJECT_ITEMS}-project cap: {removed.name}')
 
-    _compact_skills_for_space(pruned, warnings, max_per_category=9)
+    _compact_skills_for_space(pruned, warnings, max_per_category=6)
 
     while True:
         total_bullets = _count_bullets(pruned)

@@ -92,8 +92,12 @@
 {% for project in resume.projects %}
 {% if (project.section or 'projects') != 'minor_projects' %}
 \textbf{ {{- project.name | latex_escape -}} }{% if project.dates %} \hfill {{ (project.dates.start or '') | latex_escape -}}{% if project.dates.start and project.dates.end %} -- {% endif %}{{ (project.dates.end or '') | latex_escape -}}{% endif %}\\
-{% if project.link %}{{- project.link | latex_escape -}}\\{% endif %}
-{% if project.tech %}\textit{Tech}: {{ project.tech | join(', ') | latex_escape -}}\\{% endif %}
+{% if project.link %}
+{{- project.link | latex_escape -}}\\
+{% endif %}
+{% if project.tech %}
+\textit{Tech}: {{ project.tech | join(', ') | latex_escape -}}\\
+{% endif %}
 \begin{itemize}
 {% for bullet in project.bullets %}
 \item {{ bullet | latex_escape }}
@@ -108,7 +112,9 @@
 {% for project in resume.projects %}
 {% if (project.section or 'projects') == 'minor_projects' %}
 \textbf{ {{- project.name | latex_escape -}} }{% if project.dates %} \hfill {{ (project.dates.start or '') | latex_escape -}}{% if project.dates.start and project.dates.end %} -- {% endif %}{{ (project.dates.end or '') | latex_escape -}}{% endif %}\\
-{% if project.tech %}\textit{Tech}: {{ project.tech | join(', ') | latex_escape -}}\\{% endif %}
+{% if project.tech %}
+\textit{Tech}: {{ project.tech | join(', ') | latex_escape -}}\\
+{% endif %}
 \begin{itemize}
 {% for bullet in project.bullets %}
 \item {{ bullet | latex_escape }}

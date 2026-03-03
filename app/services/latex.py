@@ -175,14 +175,7 @@ def _dedupe_skill_entries(entries: list[str]) -> list[str]:
     for entry in unique:
         lowered = entry.lower()
         if not _balanced_parentheses(entry):
-            has_balanced_container = any(
-                lowered != other.lower()
-                and lowered in other.lower()
-                and _balanced_parentheses(other)
-                for other in unique
-            )
-            if has_balanced_container:
-                continue
+            continue
         if len(entry) >= 12:
             is_fragment_of_longer = any(
                 lowered != other.lower() and lowered in other.lower() and len(other) > len(entry) + 8
